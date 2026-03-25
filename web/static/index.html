@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIRS Online — RSUD Sleman</title>
+  <meta name="description" content="Dashboard monitoring dan sinkronisasi data ketersediaan tempat tidur RSUD Sleman ke RS Online Kemenkes" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a5f',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+
+    .tab-active {
+      border-bottom: 3px solid #2563eb;
+      color: #2563eb;
+      font-weight: 600;
+    }
+
+    .fade-in {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .log-line { font-family: 'Courier New', monospace; font-size: 0.78rem; }
+    .log-success { color: #16a34a; }
+    .log-error   { color: #dc2626; }
+    .log-warn    { color: #d97706; }
+    .log-info    { color: #6b7280; }
+
+    .status-badge-running {
+      background: #dcfce7; color: #15803d;
+      animation: pulse 2s infinite;
+    }
+    .status-badge-idle { background: #f3f4f6; color: #6b7280; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.6; }
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen"
+  x-data="appState()"
+  x-init="init()"
+  x-cloak>
+
+  <!-- ═══ HEADER ═══════════════════════════════════════════════════════════ -->
+  <header class="bg-gradient-to-r from-brand-900 to-brand-700 shadow-lg sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-white font-bold text-lg leading-tight">SIRS Online — RSUD Sleman</h1>
+          <p class="text-blue-200 text-xs">Bridging Kemenkes RS Online V3</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <span class="text-blue-200 text-sm hidden sm:block" x-text="currentTime"></span>
+        <!-- Worker status badge -->
+        <span class="px-3 py-1 rounded-full text-xs font-semibold"
+          :class="workerStatus === 'Running' ? 'status-badge-running' : 'status-badge-idle'"
+          x-text="workerStatus === 'Running' ? '● Running' : '○ Idle'">
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ NAVIGATION TABS ═══════════════════════════════════════════════════ -->
+  <div class="max-w-7xl mx-auto px-6 mt-6">
+    <div class="card">
+      <nav class="flex border-b border-gray-100 overflow-x-auto">
+        <template x-for="(tab, idx) in tabs" :key="idx">
+          <button
+            @click="activeTab = idx"
+            :class="activeTab === idx ? 'tab-active' : 'text-gray-500 hover:text-gray-700'"
+            class="px-5 py-4 text-sm whitespace-nowrap transition-all duration-200 focus:outline-none"
+            :id="'tab-' + idx"
+            x-text="tab.label">
+          </button>
+        </template>
+      </nav>
+
+      <!-- ═══ TAB 1 — INFO RUANG ════════════════════════════════════════════ -->
+      <div x-show="activeTab === 0" x-transition class="p-6 fade-in">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-800">Ketersediaan Tempat Tidur</h2>
+          <button @click="loadBeds()"
+            class="flex items-center gap-2 px-3 py-1.5 bg-brand-50 text-brand-600 rounded-lg text-sm font-medium hover:bg-brand-100 transition-colors">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Refresh
+          </button>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="loadingBeds" class="flex items-center justify-center py-16">
+          <div class="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="!loadingBeds && beds.length === 0" class="text-center py-16 text-gray-400">
+          <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          <p class="text-sm">Belum ada data. Klik Refresh atau jalankan Sync Now di Tab Operasional.</p>
+        </div>
+
+        <!-- Table -->
+        <div x-show="!loadingBeds && beds.length > 0" class="overflow-x-auto rounded-lg border border-gray-100">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                <th class="px-4 py-3 text-left font-semibold">Ruang / Kamar</th>
+                <th class="px-4 py-3 text-center font-semibold">Kelas</th>
+                <th class="px-4 py-3 text-center font-semibold">Jumlah</th>
+                <th class="px-4 py-3 text-center font-semibold">Terpakai</th>
+                <th class="px-4 py-3 text-center font-semibold">Tersedia</th>
+                <th class="px-4 py-3 text-center font-semibold">Antrian</th>
+                <th class="px-4 py-3 text-center font-semibold">COVID</th>
+                <th class="px-4 py-3 text-center font-semibold">Occupancy</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="(bed, i) in beds" :key="i">
+                <tr class="hover:bg-blue-50/30 transition-colors">
+                  <td class="px-4 py-3 font-medium" x-text="bed.ruang"></td>
+                  <td class="px-4 py-3 text-center text-gray-500 text-xs" x-text="bed.kelas || '—'"></td>
+                  <td class="px-4 py-3 text-center font-semibold" x-text="bed.jumlah"></td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="px-2 py-0.5 bg-red-50 text-red-700 rounded font-semibold" x-text="bed.terpakai"></span>
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="px-2 py-0.5 bg-green-50 text-green-700 rounded font-semibold"
+                      x-text="bed.jumlah - bed.terpakai >= 0 ? bed.jumlah - bed.terpakai : 0"></span>
+                  </td>
+                  <td class="px-4 py-3 text-center text-gray-600" x-text="bed.antrian"></td>
+                  <td class="px-4 py-3 text-center">
+                    <span x-show="bed.covid == 1"
+                      class="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full font-semibold">COVID</span>
+                    <span x-show="bed.covid != 1" class="text-gray-300 text-xs">—</span>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <div class="flex-1 bg-gray-100 rounded-full h-2">
+                        <div class="h-2 rounded-full transition-all"
+                          :style="'width: ' + Math.min(Math.round(bed.terpakai / (bed.jumlah||1) * 100), 100) + '%'"
+                          :class="{
+                            'bg-green-500': Math.round(bed.terpakai / (bed.jumlah||1) * 100) < 70,
+                            'bg-yellow-500': Math.round(bed.terpakai / (bed.jumlah||1) * 100) >= 70 && Math.round(bed.terpakai / (bed.jumlah||1) * 100) < 90,
+                            'bg-red-500': Math.round(bed.terpakai / (bed.jumlah||1) * 100) >= 90
+                          }">
+                        </div>
+                      </div>
+                      <span class="text-xs text-gray-500 w-8 text-right"
+                        x-text="Math.min(Math.round(bed.terpakai / (bed.jumlah||1) * 100), 100) + '%'"></span>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Summary -->
+        <div x-show="beds.length > 0" class="grid grid-cols-3 gap-4 mt-5">
+          <div class="bg-blue-50 rounded-xl p-4 text-center">
+            <p class="text-xs text-blue-500 uppercase tracking-wide font-semibold mb-1">Total Bed</p>
+            <p class="text-2xl font-bold text-blue-700" x-text="beds.reduce((s,b) => s + b.jumlah, 0)"></p>
+          </div>
+          <div class="bg-red-50 rounded-xl p-4 text-center">
+            <p class="text-xs text-red-500 uppercase tracking-wide font-semibold mb-1">Terpakai</p>
+            <p class="text-2xl font-bold text-red-600" x-text="beds.reduce((s,b) => s + b.terpakai, 0)"></p>
+          </div>
+          <div class="bg-green-50 rounded-xl p-4 text-center">
+            <p class="text-xs text-green-500 uppercase tracking-wide font-semibold mb-1">Tersedia</p>
+            <p class="text-2xl font-bold text-green-600"
+              x-text="Math.max(0, beds.reduce((s,b) => s + b.jumlah, 0) - beds.reduce((s,b) => s + b.terpakai, 0))"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ TAB 2 — MASTER REFERENSI ═════════════════════════════════════ -->
+      <div x-show="activeTab === 1" x-transition class="p-6 fade-in">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-800">Master Referensi Kemenkes</h2>
+            <p class="text-xs text-gray-400 mt-0.5">Daftar referensi tempat tidur resmi dari Kemenkes (read-only)</p>
+          </div>
+          <button @click="loadReferensi()"
+            class="flex items-center gap-2 px-3 py-1.5 bg-brand-50 text-brand-600 rounded-lg text-sm font-medium hover:bg-brand-100 transition-colors">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Muat Data
+          </button>
+        </div>
+
+        <div x-show="loadingReferensi" class="flex items-center justify-center py-16">
+          <div class="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
+        </div>
+
+        <div x-show="!loadingReferensi && referensi.length === 0" class="text-center py-16 text-gray-400">
+          <p class="text-sm">Klik "Muat Data" untuk mengambil referensi dari Kemenkes.</p>
+        </div>
+
+        <div x-show="!loadingReferensi && referensi.length > 0" class="overflow-x-auto rounded-lg border border-gray-100">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                <th class="px-4 py-3 text-left font-semibold">ID TT</th>
+                <th class="px-4 py-3 text-left font-semibold">Nama Ruang</th>
+                <th class="px-4 py-3 text-center font-semibold">Jumlah</th>
+                <th class="px-4 py-3 text-center font-semibold">Terpakai</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="(ref, i) in referensi" :key="i">
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-4 py-3 font-mono text-gray-500 text-xs" x-text="ref.kode_tt || ref.id_t_tt || ref.id_tt || '—'"></td>
+                  <td class="px-4 py-3 font-medium" x-text="ref.nama_tt || ref.tt || ref.ruang || ref.nama_ruang || '—'"></td>
+                  <td class="px-4 py-3 text-center" x-text="ref.jumlah ?? '—'"></td>
+                  <td class="px-4 py-3 text-center" x-text="ref.terpakai ?? '—'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ═══ TAB 3 — MASTER FASYANKES ═══════════════════════════════════════ -->
+      <div x-show="activeTab === 2" x-transition class="p-6 fade-in">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-800">Master Fasyankes</h2>
+            <p class="text-xs text-gray-400 mt-0.5">Data tempat tidur yang sudah diinputkan RS ke Kemenkes — klik baris untuk isi form PUT</p>
+          </div>
+          <button @click="loadFasyankes()"
+            class="flex items-center gap-2 px-3 py-1.5 bg-brand-50 text-brand-600 rounded-lg text-sm font-medium hover:bg-brand-100 transition-colors">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Muat Data
+          </button>
+        </div>
+
+        <div x-show="loadingFasyankes" class="flex items-center justify-center py-16">
+          <div class="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
+        </div>
+
+        <div x-show="!loadingFasyankes && fasyankes.length === 0" class="text-center py-16 text-gray-400">
+          <p class="text-sm">Klik "Muat Data" untuk mengambil data Fasyankes dari Kemenkes.</p>
+        </div>
+
+        <div x-show="fasyankesMsg" class="mb-3 px-3 py-2 bg-green-50 text-green-700 text-sm rounded-lg" x-text="fasyankesMsg"></div>
+
+        <div x-show="!loadingFasyankes && fasyankes.length > 0" class="overflow-x-auto rounded-lg border border-gray-100">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                <th class="px-4 py-3 text-left font-semibold">ID TT</th>
+                <th class="px-4 py-3 text-left font-semibold">Nama Ruang</th>
+                <th class="px-4 py-3 text-center font-semibold">Jumlah</th>
+                <th class="px-4 py-3 text-center font-semibold">Terpakai</th>
+                <th class="px-4 py-3 text-center font-semibold">Antrian</th>
+                <th class="px-4 py-3 text-center font-semibold">COVID</th>
+                <th class="px-4 py-3 text-center font-semibold">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="(fs, i) in fasyankes" :key="i">
+                <tr class="hover:bg-blue-50/40 transition-colors">
+                  <td class="px-4 py-3 font-mono text-gray-500 text-xs" x-text="fs.id_tt ?? fs.id ?? fs.kode_tt ?? '—'"></td>
+                  <td class="px-4 py-3 font-medium" x-text="fs.ruang || fs.nama_ruang || fs.tt || fs.nama_tt || '—'"></td>
+                  <td class="px-4 py-3 text-center" x-text="fs.jumlah ?? '—'"></td>
+                  <td class="px-4 py-3 text-center" x-text="fs.terpakai ?? '—'"></td>
+                  <td class="px-4 py-3 text-center" x-text="fs.antrian ?? '—'"></td>
+                  <td class="px-4 py-3 text-center">
+                    <span x-show="fs.covid == 1" class="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full font-semibold">COVID</span>
+                    <span x-show="fs.covid != 1" class="text-gray-300 text-xs">—</span>
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    <button @click="gunakanUntukPUT(fs)"
+                      class="px-2 py-1 bg-brand-600 hover:bg-brand-700 text-white text-xs rounded-lg font-medium transition-colors">
+                      Gunakan PUT
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ═══ TAB 4 — MANAJEMEN TT ══════════════════════════════════════════ -->
+      <div x-show="activeTab === 3" x-transition class="p-6 fade-in">
+        <h2 class="text-lg font-semibold text-gray-800 mb-6">Manajemen Tempat Tidur</h2>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Form POST (tambah baru) -->
+          <div class="border border-gray-100 rounded-xl p-5">
+            <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <span class="w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs flex items-center justify-center font-bold">+</span>
+              Tambah TT Baru (POST)
+            </h3>
+            <form @submit.prevent="postTempat()">
+              <template x-for="field in formFields" :key="field.key">
+                <div class="mb-3">
+                  <label class="block text-xs font-medium text-gray-600 mb-1" x-text="field.label"></label>
+                  <input type="text" x-model="postForm[field.key]"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition"
+                    :placeholder="field.placeholder" :required="field.required" />
+                </div>
+              </template>
+              <button type="submit"
+                :disabled="posting"
+                class="w-full mt-2 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm transition-colors disabled:opacity-50">
+                <span x-show="!posting">POST ke Kemenkes</span>
+                <span x-show="posting">Mengirim...</span>
+              </button>
+            </form>
+            <div x-show="postMessage" class="mt-3 p-3 rounded-lg text-sm"
+              :class="postSuccess ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'"
+              x-text="postMessage"></div>
+          </div>
+
+          <!-- Form PUT (update manual) -->
+          <div class="border border-gray-100 rounded-xl p-5">
+            <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs flex items-center justify-center font-bold">↑</span>
+              Update TT (PUT)
+            </h3>
+            <form @submit.prevent="putTempat()">
+              <template x-for="field in formFields" :key="field.key">
+                <div class="mb-3">
+                  <label class="block text-xs font-medium text-gray-600 mb-1" x-text="field.label"></label>
+                  <input type="text" x-model="putForm[field.key]"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition"
+                    :placeholder="field.placeholder" :required="field.required" />
+                </div>
+              </template>
+              <button type="submit"
+                :disabled="putting"
+                class="w-full mt-2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold text-sm transition-colors disabled:opacity-50">
+                <span x-show="!putting">PUT ke Kemenkes</span>
+                <span x-show="putting">Mengirim...</span>
+              </button>
+            </form>
+            <div x-show="putMessage" class="mt-3 p-3 rounded-lg text-sm"
+              :class="putSuccess ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'"
+              x-text="putMessage"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ TAB 5 — OPERASIONAL & WORKER ══════════════════════════════════ -->
+      <div x-show="activeTab === 4" x-transition class="p-6 fade-in">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <!-- Status Worker -->
+          <div class="bg-gray-50 rounded-xl p-4">
+            <p class="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">Status Worker</p>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full"
+                :class="workerStatus === 'Running' ? 'bg-green-500 animate-pulse' : 'bg-gray-300'"></div>
+              <span class="text-base font-bold" x-text="workerStatus"></span>
+            </div>
+          </div>
+
+          <!-- SK Aktif -->
+          <div class="bg-gray-50 rounded-xl p-4">
+            <p class="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">SK Aktif</p>
+            <span class="text-base font-bold font-mono text-brand-700"
+              x-text="skNo || '—'"></span>
+          </div>
+
+          <!-- Sync Now -->
+          <div class="bg-gray-50 rounded-xl p-4 flex flex-col justify-between">
+            <p class="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">Manual Sync</p>
+            <button id="syncNowBtn"
+              @click="syncNow()"
+              :disabled="workerStatus === 'Running' || syncing"
+              class="w-full py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-gray-300 text-white rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" :class="syncing ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <span x-text="syncing ? 'Memproses...' : 'Sync Now'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sync feedback message -->
+        <div x-show="syncMessage" class="mb-4 p-3 rounded-lg text-sm"
+          :class="syncSuccess ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'"
+          x-text="syncMessage">
+        </div>
+
+        <!-- Log Viewer -->
+        <div class="rounded-xl border border-gray-200 overflow-hidden">
+          <div class="bg-gray-800 flex items-center justify-between px-4 py-2">
+            <span class="text-gray-300 text-xs font-mono font-semibold">📋 logs/sirs.log</span>
+            <button @click="loadLogs()"
+              class="text-gray-400 hover:text-white text-xs transition-colors">
+              Refresh Log
+            </button>
+          </div>
+          <div class="bg-gray-900 h-72 overflow-y-auto p-4 space-y-0.5" id="logContainer">
+            <div x-show="loadingLogs" class="text-gray-500 text-xs font-mono">Memuat log...</div>
+            <div x-show="!loadingLogs && logLines.length === 0" class="text-gray-600 text-xs font-mono">
+              Belum ada log. Jalankan Sync Now untuk memulai.
+            </div>
+            <template x-for="(line, i) in logLines" :key="i">
+              <div class="log-line"
+                :class="{
+                  'log-success': line.includes('[SUCCESS]'),
+                  'log-error': line.includes('[ERROR]') || line.includes('[FAILED]'),
+                  'log-warn': line.includes('[WARN]') || line.includes('[RETRY]'),
+                  'log-info': !line.includes('[SUCCESS]') && !line.includes('[ERROR]') && !line.includes('[FAILED]') && !line.includes('[WARN]') && !line.includes('[RETRY]')
+                }"
+                x-text="line">
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="max-w-7xl mx-auto px-6 py-6 text-center text-xs text-gray-400 mt-4">
+    RSUD Sleman · SIRS Online Bridging V3 · Port 9271
+  </footer>
+
+  <!-- ═══ ALPINE.JS APP STATE ═══════════════════════════════════════════════ -->
+  <script>
+    function appState() {
+      return {
+        activeTab: 0,
+        tabs: [
+          { label: '🏥 Info Ruang' },
+          { label: '📋 Referensi TT' },
+          { label: '🏨 Master Fasyankes' },
+          { label: '⚙️ Manajemen TT' },
+          { label: '🔧 Operasional' },
+        ],
+
+        // Tab 1 — Beds
+        beds: [],
+        loadingBeds: false,
+
+        // Tab 2 — Referensi
+        referensi: [],
+        loadingReferensi: false,
+
+        // Tab 3 — Fasyankes
+        fasyankes: [],
+        loadingFasyankes: false,
+        fasyankesMsg: '',
+
+        // Tab 3 — Forms
+        formFields: [
+          { key: 'id_tt',               label: 'ID TT',               placeholder: '39',                         required: true  },
+          { key: 'ruang',               label: 'Nama Ruang',          placeholder: 'NICU Dengan Ventilator',     required: true  },
+          { key: 'jumlah_ruang',        label: 'Jumlah Ruang',        placeholder: '1',                          required: false },
+          { key: 'jumlah',              label: 'Jumlah Bed',          placeholder: '2',                          required: false },
+          { key: 'terpakai',            label: 'Terpakai',            placeholder: '1',                          required: false },
+          { key: 'terpakai_suspek',     label: 'Terpakai Suspek',     placeholder: '0',                          required: false },
+          { key: 'terpakai_konfirmasi', label: 'Terpakai Konfirmasi', placeholder: '0',                          required: false },
+          { key: 'antrian',             label: 'Antrian',             placeholder: '0',                          required: false },
+          { key: 'covid',               label: 'COVID (0/1)',          placeholder: '0',                          required: false },
+        ],
+        postForm: { id_tt: '', ruang: '', jumlah_ruang: '1', jumlah: '', terpakai: '', terpakai_suspek: '0', terpakai_konfirmasi: '0', antrian: '0', covid: '0' },
+        putForm:  { id_tt: '', ruang: '', jumlah_ruang: '1', jumlah: '', terpakai: '', terpakai_suspek: '0', terpakai_konfirmasi: '0', antrian: '0', covid: '0' },
+        posting: false, postMessage: '', postSuccess: false,
+        putting: false,  putMessage: '',  putSuccess: false,
+
+        // Tab 4 — Operasional
+        workerStatus: 'Idle',
+        skNo: '',
+        syncing: false,
+        syncMessage: '',
+        syncSuccess: false,
+        logLines: [],
+        loadingLogs: false,
+        currentTime: '',
+
+        init() {
+          this.loadBeds();
+          this.loadWorkerStatus();
+          this.loadLogs();
+          this.loadSKActive();
+          this.updateTime();
+
+          // Polling setiap 30 detik
+          setInterval(() => {
+            this.loadWorkerStatus();
+            this.loadSKActive();
+            if (this.activeTab === 0) this.loadBeds();
+            if (this.activeTab === 4) this.loadLogs();
+          }, 30000);
+
+          setInterval(() => this.updateTime(), 1000);
+        },
+
+        updateTime() {
+          this.currentTime = new Date().toLocaleTimeString('id-ID', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+          });
+        },
+
+        async loadBeds() {
+          this.loadingBeds = true;
+          try {
+            const r = await fetch('/api/beds');
+            this.beds = (await r.json()) || [];
+          } catch (e) {
+            console.error('loadBeds:', e);
+            this.beds = [];
+          } finally {
+            this.loadingBeds = false;
+          }
+        },
+
+        async loadReferensi() {
+          this.loadingReferensi = true;
+          try {
+            const r = await fetch('/api/proxy/referensi');
+            const data = await r.json();
+            // Kemenkes mengembalikan {"tempat_tidur": [...]}
+            this.referensi = data.tempat_tidur || (Array.isArray(data) ? data : []);
+          } catch (e) {
+            console.error('loadReferensi:', e);
+            this.referensi = [];
+          } finally {
+            this.loadingReferensi = false;
+          }
+        },
+
+        async loadFasyankes() {
+          this.loadingFasyankes = true;
+          this.fasyankesMsg = '';
+          try {
+            const r = await fetch('/api/proxy/fasyankes');
+            const data = await r.json();
+            // Kemenkes mengembalikan {"fasyankes": [...]}
+            this.fasyankes = data.fasyankes || (Array.isArray(data) ? data : []);
+          } catch (e) {
+            console.error('loadFasyankes:', e);
+            this.fasyankes = [];
+          } finally {
+            this.loadingFasyankes = false;
+          }
+        },
+
+        gunakanUntukPUT(fs) {
+          // Salin data ke form PUT lalu pindah ke Tab Manajemen TT (index 3)
+          this.putForm = {
+            id_tt:               String(fs.id_tt ?? fs.id ?? fs.kode_tt ?? ''),
+            ruang:               fs.ruang || fs.nama_ruang || fs.tt || fs.nama_tt || '',
+            jumlah_ruang:        String(fs.jumlah_ruang ?? '1'),
+            jumlah:              String(fs.jumlah ?? ''),
+            terpakai:            String(fs.terpakai ?? ''),
+            terpakai_suspek:     String(fs.terpakai_suspek ?? '0'),
+            terpakai_konfirmasi: String(fs.terpakai_konfirmasi ?? '0'),
+            antrian:             String(fs.antrian ?? '0'),
+            covid:               String(fs.covid ?? '0'),
+          };
+          this.activeTab = 3; // pindah ke Tab Manajemen TT
+          this.fasyankesMsg = `Data "${this.putForm.ruang}" (ID: ${this.putForm.id_tt}) berhasil disalin ke form PUT.`;
+          setTimeout(() => this.fasyankesMsg = '', 5000);
+        },
+
+        async postTempat() {
+          this.posting = true;
+          this.postMessage = '';
+          try {
+            const r = await fetch('/api/kemenkes/tempat-tidur', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.postForm)
+            });
+            const data = await r.json();
+            this.postSuccess = r.ok;
+            this.postMessage = r.ok ? 'Berhasil ditambahkan ke Kemenkes.' : (data.error || 'Gagal menambahkan data.');
+          } catch (e) {
+            this.postSuccess = false;
+            this.postMessage = 'Error: ' + e.message;
+          } finally {
+            this.posting = false;
+          }
+        },
+
+        async putTempat() {
+          this.putting = true;
+          this.putMessage = '';
+          try {
+            const r = await fetch('/api/kemenkes/tempat-tidur/' + this.putForm.id_tt, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.putForm)
+            });
+            const data = await r.json();
+            this.putSuccess = r.ok;
+            this.putMessage = r.ok ? 'Berhasil diupdate ke Kemenkes.' : (data.error || 'Gagal mengupdate data.');
+          } catch (e) {
+            this.putSuccess = false;
+            this.putMessage = 'Error: ' + e.message;
+          } finally {
+            this.putting = false;
+          }
+        },
+
+        async syncNow() {
+          this.syncing = true;
+          this.syncMessage = '';
+          try {
+            const r = await fetch('/api/sync', { method: 'POST' });
+            const data = await r.json();
+            this.syncSuccess = r.ok;
+            this.syncMessage = data.message || (r.ok ? 'Sync dimulai.' : 'Gagal memulai sync.');
+            // Refresh log setelah beberapa saat
+            setTimeout(() => { this.loadLogs(); this.loadWorkerStatus(); }, 2000);
+          } catch (e) {
+            this.syncSuccess = false;
+            this.syncMessage = 'Error: ' + e.message;
+          } finally {
+            this.syncing = false;
+            setTimeout(() => this.syncMessage = '', 6000);
+          }
+        },
+
+        async loadWorkerStatus() {
+          try {
+            const r = await fetch('/api/worker/status');
+            const d = await r.json();
+            this.workerStatus = d.status || 'Idle';
+          } catch (_) {}
+        },
+
+        async loadSKActive() {
+          try {
+            const r = await fetch('/api/sk-active');
+            const d = await r.json();
+            this.skNo = d.sk_no || '';
+          } catch (_) {}
+        },
+
+        async loadLogs() {
+          this.loadingLogs = true;
+          try {
+            const r = await fetch('/api/logs');
+            const d = await r.json();
+            this.logLines = d.lines || [];
+            this.$nextTick(() => {
+              const el = document.getElementById('logContainer');
+              if (el) el.scrollTop = el.scrollHeight;
+            });
+          } catch (e) {
+            console.error('loadLogs:', e);
+          } finally {
+            this.loadingLogs = false;
+          }
+        }
+      };
+    }
+  </script>
+</body>
+</html>

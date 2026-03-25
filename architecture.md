@@ -177,16 +177,16 @@ Hasil query disimpan **in-memory** sebagai `[]BedSiranap` — tidak memerlukan d
 
 ```env
 # Database SIMRS
-DB_HOST=
+DB_HOST=192.168.x.x
 DB_PORT=1433
-DB_USER=
-DB_PASS=
-DB_NAME=
+DB_USER=root
+DB_PASS=password_anda
+DB_NAME=nama_database
 
 # API RS Online Kemenkes
 API_URL=https://sirs.kemkes.go.id/fo/index.php/Fasyankes
-API_RS_ID=
-API_PASS=
+API_RS_ID=kode_rs_anda
+API_PASS=password_api_anda
 
 # Operasional
 APP_PORT=9271           # Port dashboard (non-standar, hanya akses lokal)
