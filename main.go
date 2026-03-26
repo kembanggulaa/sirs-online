@@ -130,6 +130,10 @@ func run() {
 		makeKemenkesForwardHandler(cfg, "PUT", cfg.APIURL+`/Fasyankes`)(w, r)
 	})
 
+	// Endpoint Eksekutif — Dashboard Khusus (Data total per bangsal)
+	mux.HandleFunc("GET /api/beds/executive", makeProxyHandler(cfg, "GET",
+		cfg.ExecutiveAPIURL))
+
 	addr := ":" + strconv.Itoa(cfg.AppPort)
 	logger.Info("Dashboard berjalan di http://localhost%s", addr)
 

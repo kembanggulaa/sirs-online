@@ -26,6 +26,7 @@ type Config struct {
 	SyncIntervalHours  int
 	RetryMax           int
 	LogFile            string
+	ExecutiveAPIURL    string
 }
 
 // Load membaca konfigurasi dari file .env menggunakan Viper
@@ -54,5 +55,6 @@ func Load() *Config {
 		SyncIntervalHours: viper.GetInt("SYNC_INTERVAL_HOURS"),
 		RetryMax:          viper.GetInt("RETRY_MAX"),
 		LogFile:           viper.GetString("LOG_FILE"),
+		ExecutiveAPIURL:   viper.GetString("EXECUTIVE_API_URL"),
 	}
 }
