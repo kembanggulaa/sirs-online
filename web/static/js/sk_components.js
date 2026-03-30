@@ -90,17 +90,44 @@ document.addEventListener('alpine:init', () => {
     },
 
     addRow() {
-      this.rows.push(this.newRowTemplate());
+      const newRow = this.newRowTemplate();
+      this.rows.push(newRow);
+      
+      this.$nextTick(() => {
+        const el = document.getElementById('row-' + newRow.id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Sedikit efek highlight visual untuk menunjukkan baris mana yang baru
+          el.classList.add('ring-2', 'ring-brand-500', 'ring-offset-2');
+          setTimeout(() => el.classList.remove('ring-2', 'ring-brand-500', 'ring-offset-2'), 1500);
+        }
+      });
     },
 
     duplicateRow(index) {
       const source = this.rows[index];
-      const copy = { ...source, id: crypto.randomUUID(), kamar: source.kamar + ' (Copy)' };
+      const newId = crypto.randomUUID();
+      const copy = { ...source, id: newId, kamar: source.kamar + ' (Copy)' };
+      
       // Insert after the current row
       this.rows.splice(index + 1, 0, copy);
+      
+      this.$nextTick(() => {
+        const el = document.getElementById('row-' + newId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('ring-2', 'ring-brand-500', 'ring-offset-2');
+          setTimeout(() => el.classList.remove('ring-2', 'ring-brand-500', 'ring-offset-2'), 1500);
+        }
+      });
     },
 
     deleteRow(index) {
+      const namaKamar = this.rows[index].kamar || 'Kamar Tanpa Nama (Kosong)';
+      if (!confirm(`Apaka Anda yakin ingin menghapus baris data untuk "${namaKamar}"?\n\nTindakan ini akan menghapus draf baris ini dari form sebelum disimpan.`)) {
+        return;
+      }
+      
       this.rows.splice(index, 1);
       if (this.rows.length === 0) {
         this.addRow();
