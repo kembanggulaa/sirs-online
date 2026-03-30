@@ -101,6 +101,7 @@ func run() {
 
 	// 4. Inisialisasi repository & dispatcher
 	repo := repository.New(db)
+	skRepo := repository.NewSKRepository(db)
 	dispatcher := worker.NewDispatcher(repo, cfg)
 
 	// 5. Mulai Ticker (berjalan di background)
@@ -112,6 +113,9 @@ func run() {
 	// Endpoint internal
 	apiHandler := handler.New(cfg, dispatcher)
 	apiHandler.RegisterRoutes(mux)
+
+	skHandler := handler.NewSKHandler(skRepo)
+	skHandler.RegisterRoutes(mux)
 
 	// Endpoint proxy Kemenkes — Tab 2: GET referensi TT dari Kemenkes
 	mux.HandleFunc("GET /api/proxy/referensi", makeProxyHandler(cfg, "GET",

@@ -8,8 +8,12 @@
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS / XLSX CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <!-- Alpine.js CDN -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- SK Components JS -->
+  <script src="/js/sk_components.js"></script>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -395,7 +399,6 @@
           </div>
         </div>
       </div>
-
       <!-- ═══ TAB 5 — OPERASIONAL & WORKER ══════════════════════════════════ -->
       <div x-show="activeTab === 4" x-transition class="p-6 fade-in">
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -465,6 +468,309 @@
           </div>
         </div>
       </div>
+
+      <!-- ═══ TAB 6 — MANAJEMEN SK ✨ ══════════════════════════════════ -->
+      <div x-show="activeTab === 5" x-transition class="p-6 fade-in" x-data="skManagement()">
+        <div class="flex items-center justify-between mb-8">
+          <div>
+            <h2 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-600 to-blue-400">Manajemen SK Tempat Tidur</h2>
+            <p class="text-xs text-gray-500 mt-1 uppercase tracking-widest font-semibold flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-brand-500"></span> Validasi & Sinkronisasi Eksekutif
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="px-3 py-1 rounded bg-brand-50 text-brand-700 text-xs font-semibold uppercase tracking-wider">Step <span x-text="step"></span> / 3</span>
+          </div>
+        </div>
+
+        <!-- Progress Flow Line -->
+        <div class="relative w-full h-1 bg-gray-100 rounded-full mb-10 overflow-hidden">
+           <div class="absolute top-0 left-0 h-full bg-brand-600 transition-all duration-700 ease-out"
+                :style="'width: ' + ((step - 1) * 50) + '%'"></div>
+        </div>
+
+        <!-- ─── STEP 1: HEADER & IMPORT ─────────────────────────────────── -->
+        <div x-show="step === 1" x-transition:enter="transition ease-out duration-300 transform" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0" class="max-w-4xl mx-auto space-y-8">
+          
+          <div x-show="retiringSK" class="bg-gradient-to-r from-red-50 to-orange-50 border-l-4 border-red-400 p-4 rounded-r-xl shadow-sm text-sm">
+            <div class="flex">
+              <div class="flex-shrink-0"><span class="text-xl">⚠️</span></div>
+              <div class="ml-3">
+                <h3 class="text-red-800 font-bold mb-1">Pensiun SK Terdeteksi</h3>
+                <p class="text-red-700">SK Aktif saat ini <code class="font-mono font-bold bg-white px-1.5 py-0.5 rounded text-red-900" x-text="retiringSK"></code> akan otomatis di-nonaktifkan jika SK Baru diimport dengan sukses.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Manual Header Form -->
+            <div class="bg-white border hover:border-brand-200 hover:shadow-lg transition-all duration-300 rounded-2xl p-6 relative overflow-hidden group">
+              <div class="absolute top-0 left-0 w-1 h-full bg-brand-500 group-hover:w-2 transition-all"></div>
+              <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wide mb-5 flex items-center gap-2">
+                <span class="bg-brand-100 text-brand-700 w-6 h-6 flex items-center justify-center rounded-full">1</span>
+                Isi Data Header
+              </h3>
+              
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Nomor SK Baru</label>
+                  <input type="text" x-model="skNo" placeholder="SK/DIR/2026/01" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-sm font-semibold text-gray-800" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Mulai Berlaku (Efektif)</label>
+                  <input type="date" x-model="tglBerlaku" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-sm font-medium text-gray-700" />
+                </div>
+                
+                <button @click="goToStep(2)" class="w-full mt-4 flex items-center justify-center gap-2 bg-gray-900 hover:bg-black text-white px-6 py-3 rounded-xl font-semibold transition-all shadow-md hover:shadow-xl group">
+                  Lanjut ke Input Baris
+                  <svg class="w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Alternative: Excel Upload -->
+            <div class="bg-gradient-to-br from-brand-50 to-white border border-brand-100 hover:border-brand-300 hover:shadow-xl transition-all duration-300 rounded-2xl p-6 flex flex-col items-center justify-center text-center relative"
+                @dragover.prevent="dragOver = true"
+                @dragleave.prevent="dragOver = false"
+                @drop.prevent="handleFiles($event)"
+                :class="dragOver ? 'ring-4 ring-brand-300 bg-brand-100' : ''">
+              <div class="w-16 h-16 bg-white rounded-2xl shadow-sm border border-brand-100 flex items-center justify-center mb-4 transform hover:scale-105 transition-transform">
+                <svg class="w-8 h-8 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              </div>
+              <h3 class="font-bold text-gray-800 text-lg">Unggah Excel</h3>
+              <p class="text-gray-500 text-sm mt-2 mb-6 px-4">Tarik & lepas file <code class="bg-white px-1 py-0.5 rounded text-xs text-brand-600">.xlsx</code> di sini, atau pilih file dari komputer Anda.</p>
+              
+              <input type="file" id="excelUpload" class="hidden" accept=".xlsx,.xls" @change="handleFiles($event)">
+              <button onclick="document.getElementById('excelUpload').click()" 
+                  class="bg-white text-brand-600 border border-brand-200 px-6 py-2.5 rounded-full font-semibold shadow-sm hover:shadow-md hover:bg-brand-50 transition-all flex items-center gap-2">
+                <svg class="w-4 h-4 animate-bounce" x-show="loadingExcel" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                <span x-text="loadingExcel ? 'Memproses...' : 'Pilih File Excel'"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── STEP 2: SPREADSHEET EDITOR ──────────────────────────────── -->
+        <div x-show="step === 2" x-transition:enter="transition ease-out duration-300 delay-100 transform" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0" class="w-full max-w-5xl mx-auto">
+          
+          <div class="flex flex-col sm:flex-row items-center justify-between mb-6 bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+            <div class="flex items-center gap-4 mb-4 sm:mb-0">
+              <div class="bg-gradient-to-br from-brand-50 to-blue-50 px-4 py-2 rounded-xl border border-brand-100 shadow-inner">
+                <span class="text-[10px] uppercase font-bold tracking-widest text-brand-600 block mb-0.5 opacity-80">Nomor SK Aktif</span>
+                <span class="font-mono font-bold text-base text-gray-800" x-text="skNo"></span>
+              </div>
+              <div class="bg-gray-50 px-4 py-2 rounded-xl border border-gray-200 shadow-inner">
+                <span class="text-[10px] uppercase font-bold tracking-widest text-gray-500 block mb-0.5 opacity-80">Berlaku Mulai</span>
+                <span class="font-medium text-base text-gray-800" x-text="tglBerlaku || '-'"></span>
+              </div>
+            </div>
+            <div class="flex gap-3">
+              <button @click="step = 1" class="text-sm font-semibold text-gray-500 hover:text-gray-800 px-5 py-2.5 border border-gray-200 bg-white rounded-xl hover:bg-gray-50 hover:shadow-sm transition">← Kembali</button>
+              <button @click="goToStep(3)" class="text-sm font-bold text-white bg-gradient-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 px-6 py-2.5 rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 transform hover:-translate-y-0.5">
+                Preview & Simpan
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4 flex items-center justify-between px-2">
+            <h3 class="font-bold text-gray-700 text-lg flex items-center gap-2">
+              <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md text-sm" x-text="rows.length"></span> Baris Data SK
+            </h3>
+            <button @click="addRow()" class="text-sm font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-5 py-2 rounded-xl flex items-center gap-2 transition hover:shadow-sm">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg> Tambah Baris Kosong
+            </button>
+          </div>
+
+          <!-- Vertical Forms per Row -->
+          <div class="space-y-4">
+            <template x-for="(row, idx) in rows" :key="row.id">
+              <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden" 
+                   x-data="{ expanded: row.kamar.includes('Copy') || rows.length <= 3 }">
+                
+                <!-- Card Header (Summary) -->
+                <div class="cursor-pointer bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between p-4 border-b border-gray-100 hover:bg-brand-50/50 transition-colors gap-4 sm:gap-0 group" 
+                     @click="expanded = !expanded"
+                     :class="expanded ? 'bg-brand-50/30' : ''">
+                  <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg border-2 shadow-sm transition-colors"
+                         :class="expanded ? 'bg-brand-500 text-white border-brand-600' : 'bg-white text-gray-500 border-gray-200 group-hover:border-brand-300'" x-text="idx + 1"></div>
+                    <div>
+                       <h4 class="font-bold text-gray-800 text-base flex items-center gap-2">
+                         <span x-text="row.kamar || 'Kamar Belum Diisi'"></span>
+                         <span class="text-gray-400 font-normal text-sm" x-text="'— ' + (row.namaruang || 'Ruang Belum Diisi')"></span>
+                       </h4>
+                       <div class="flex flex-wrap gap-2 text-[11px] font-semibold text-gray-500 mt-1.5 uppercase tracking-wide">
+                         <span class="bg-white px-2 py-0.5 border border-gray-200 rounded-md shadow-sm" x-text="'Bangsal: ' + (row.class_room_id || '-')"></span>
+                         <span class="bg-white px-2 py-0.5 border border-gray-200 rounded-md shadow-sm" x-text="'Klinik: ' + (row.clinic_id || '-')"></span>
+                         <span class="bg-orange-50 text-orange-600 px-2 py-0.5 border border-orange-200 rounded-md shadow-sm" x-show="row.covid == 1">COVID</span>
+                       </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 selbst-start sm:self-auto">
+                    <button @click.stop="duplicateRow(idx)" class="px-3.5 py-1.5 bg-white border border-gray-200 text-brand-600 text-xs font-bold rounded-lg hover:bg-brand-50 hover:border-brand-300 transition shadow-sm" title="Duplikasi">Duplikat</button>
+                    <button @click.stop="deleteRow(idx)" class="px-3.5 py-1.5 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 hover:border-red-300 transition shadow-sm" title="Hapus">Hapus</button>
+                    <div class="w-8 h-8 flex items-center justify-center ml-2 rounded-full hover:bg-gray-200 transition-colors">
+                      <svg class="w-5 h-5 text-gray-400 transform transition-transform duration-300" :class="expanded ? 'rotate-180 text-brand-500' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Card Body (Grid Form) -->
+                <div x-show="expanded" x-collapse class="p-6 bg-white border-t border-gray-100">
+                  <div class="mb-4">
+                    <p class="text-xs text-brand-600 font-semibold uppercase tracking-widest bg-brand-50 inline-block px-3 py-1 rounded-md">Urutan input sesuai standar format Excel Kemenkes / Tabel sk_bed</p>
+                  </div>
+                  
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <!-- 1. Clinic ID -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">1.</span> Clinic ID</label>
+                      <input type="text" x-model="row.clinic_id" placeholder="Misal: B011" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 2. Class Room ID -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">2.</span> Class Room ID</label>
+                      <input type="text" x-model="row.class_room_id" placeholder="Misal: AM.3" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 3. Kelas -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">3.</span> Kelas</label>
+                      <input type="text" x-model="row.kelas" placeholder="Misal: Kelas 3" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 4. Bed -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">4.</span> Jumlah Bed</label>
+                      <input type="number" x-model="row.bed" placeholder="Misal: 1" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 5. ID TT Siranap -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">5.</span> ID TT Siranap</label>
+                      <input type="text" x-model="row.id_tt_siranap" placeholder="Misal: 35" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 6. Ruang Siranap -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">6.</span> Ruang Siranap</label>
+                      <input type="text" x-model="row.ruang_siranap" placeholder="Misal: Alamanda 1" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 7. Kelas Siranap -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">7.</span> Kelas Siranap</label>
+                      <input type="text" x-model="row.kelas_siranap" placeholder="Misal: Kelas III" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 8. Covid -->
+                    <div>
+                       <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">8.</span> Status COVID-19</label>
+                       <div class="h-[38px] flex items-center px-4 bg-gray-50 border border-gray-200 rounded-lg">
+                         <label class="flex items-center gap-3 cursor-pointer w-full group">
+                           <input type="checkbox" x-model.number="row.covid" value="1" class="w-5 h-5 text-orange-500 bg-white border-gray-300 rounded focus:ring-orange-500" />
+                           <span class="text-sm font-semibold text-gray-700 group-hover:text-orange-600 transition">Ya, Khusus COVID</span>
+                         </label>
+                       </div>
+                    </div>
+                    <!-- 9. Siranap -->
+                    <div class="sm:col-span-2 lg:col-span-3">
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">9.</span> Siranap</label>
+                      <input type="text" x-model="row.siranap" placeholder="Misal: Alamanda 1, Alamanda 2, Alamanda 3, Melati, Nusa Indah 2, Nusa Indah 3, Aster" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 10. Jml Ruang Siranap -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">10.</span> Jumlah Ruang Siranap</label>
+                      <input type="number" x-model="row.jml_ruang_siranap" placeholder="Misal: 1" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 11. Kode Kelas -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">11.</span> Kode Kelas</label>
+                      <input type="text" x-model="row.kodekelas" placeholder="Misal: KL3" class="w-full px-4 py-2 bg-brand-50 border border-brand-200 shadow-sm rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 12. Nama Kelas -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">12.</span> Nama Kelas</label>
+                      <input type="text" x-model="row.namakelas" placeholder="Misal: KELAS III" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 13. Nama Ruang -->
+                    <div class="lg:col-span-2">
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">13.</span> Nama Ruang</label>
+                      <input type="text" x-model="row.namaruang" placeholder="Misal: Alamanda 1" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition" />
+                    </div>
+                    <!-- 14. Kris -->
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-brand-500 mr-1">14.</span> Standar KRIS</label>
+                      <div class="h-[38px] flex items-center px-4 bg-gray-50 border border-gray-200 rounded-lg transition hover:border-brand-300">
+                         <label class="flex items-center gap-3 cursor-pointer w-full group">
+                           <input type="checkbox" :checked="row.kris === '1' || row.kris === 1" @change="row.kris = $event.target.checked ? '1' : '0'" class="w-5 h-5 text-brand-600 bg-white border-gray-300 rounded focus:ring-brand-500" />
+                           <span class="text-sm font-semibold text-gray-700 group-hover:text-brand-700 transition">Kamar KRIS</span>
+                         </label>
+                      </div>
+                    </div>
+                    <!-- 15. Kamar -->
+                    <div class="sm:col-span-2 lg:col-span-3">
+                      <label class="block text-xs font-bold text-gray-600 mb-1.5"><span class="text-red-500 mr-1">15.</span> Kamar (Nama Final Kamar) <span class="text-red-500">*</span></label>
+                      <input type="text" x-model="row.kamar" placeholder="Misal: Kamar 1" class="w-full px-4 py-3 bg-white border-2 border-brand-200 rounded-xl text-sm font-semibold text-brand-900 focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition shadow-sm" />
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </template>
+          </div>
+          
+          <div class="mt-6 flex justify-center">
+             <button @click="addRow()" class="text-sm font-bold text-brand-700 bg-white hover:bg-brand-50 border-2 border-brand-200 hover:border-brand-300 px-8 py-3 rounded-xl flex items-center gap-2 transition hover:shadow-md">
+               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg> Tambah Baris Kosong
+             </button>
+          </div>
+
+        </div>
+
+        <!-- ─── STEP 3: PREVIEW & CONFIRMATION ────────────────────────────── -->
+        <div x-show="step === 3" x-transition:enter="transition ease-out duration-300 transform" x-transition:enter-start="scale-95 opacity-0" x-transition:enter-end="scale-100 opacity-100" class="max-w-3xl mx-auto">
+          
+          <div class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-200">
+            <div class="bg-gray-900 text-white p-6 sm:p-10 flex flex-col items-center text-center">
+              <div class="w-16 h-16 bg-brand-500 bg-opacity-20 rounded-full flex items-center justify-center mb-6">
+                <svg class="w-8 h-8 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <h3 class="text-2xl font-bold mb-2">Konfirmasi Sinkronisasi</h3>
+              <p class="text-gray-400 text-sm max-w-sm">Anda akan menyimpan data Tempat Tidur. Aksi ini menggunakan satu transaksi atomik untuk keamanan data.</p>
+            </div>
+
+            <div class="p-6 sm:p-10">
+              <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <span class="block text-xs uppercase font-bold text-gray-500 mb-1 tracking-wider">SK Baru</span>
+                  <span class="block text-lg font-bold font-mono text-gray-800" x-text="skNo"></span>
+                  <span class="block text-xs font-medium text-gray-600 mt-1" x-text="'Mulai: ' + tglBerlaku"></span>
+                </div>
+                <div class="bg-brand-50 p-4 rounded-xl border border-brand-100">
+                  <span class="block text-xs uppercase font-bold text-brand-600 mb-1 tracking-wider">Total Data</span>
+                  <span class="block text-2xl font-bold font-mono text-brand-700" x-text="rows.length"></span>
+                  <span class="block text-xs font-medium text-brand-600 mt-1">baris akan ditambahkan</span>
+                </div>
+              </div>
+
+              <!-- Messages -->
+              <div x-show="importMessage" class="mb-6 p-4 rounded-xl text-sm font-semibold border"
+                :class="importSuccess ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'">
+                <div class="flex gap-2">
+                  <span x-show="importSuccess">✅</span>
+                  <span x-text="importMessage"></span>
+                </div>
+              </div>
+
+              <div class="flex gap-3 justify-center">
+                <button @click="step = 2" :disabled="importing || importSuccess" class="px-6 py-3 font-bold text-gray-600 bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-xl transition disabled:opacity-50">
+                  Kembali Edit
+                </button>
+                <button @click="performImport()" :disabled="importing || importSuccess" class="px-8 py-3 w-48 font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl shadow-lg hover:shadow-green-500/30 transition disabled:opacity-50 flex items-center justify-center gap-2">
+                  <svg class="w-5 h-5 animate-spin" x-show="importing" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  <span x-text="importing ? 'Menyimpan...' : 'Simpan SK'"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -483,6 +789,7 @@
           { label: '🏨 Master Fasyankes' },
           { label: '⚙️ Manajemen TT' },
           { label: '🔧 Operasional' },
+          { label: '📝 Manajemen SK ✨' }
         ],
 
         // Tab 1 — Beds
