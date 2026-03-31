@@ -269,6 +269,7 @@ document.addEventListener('alpine:init', () => {
 
         const data = await res.json();
         if (res.ok) {
+          window.isFormDirty = false;
           this.importSuccess = true;
           this.importMessage = `Sukses menyimpan ${data.inserted} baris ke dalam sk_bed.`;
           // Reset form on success

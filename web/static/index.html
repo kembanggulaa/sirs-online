@@ -6,6 +6,7 @@
   <title>SIRS Online — RSUD Sleman</title>
   <meta name="description" content="Dashboard monitoring dan sinkronisasi data ketersediaan tempat tidur RSUD Sleman ke RS Online Kemenkes" />
 
+
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- SheetJS / XLSX CDN -->
@@ -14,6 +15,8 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <!-- SK Components JS -->
   <script src="/js/sk_components.js"></script>
+  <!-- Beds Components JS -->
+  <script src="/js/beds_components.js"></script>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -84,7 +87,8 @@
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen"
   x-data="appState()"
   x-init="init()"
-  x-cloak>
+  x-cloak
+  @input="window.isFormDirty = true">
 
   <!-- ═══ HEADER ═══════════════════════════════════════════════════════════ -->
   <header class="bg-gradient-to-r from-brand-900 to-brand-700 shadow-lg sticky top-0 z-50">
@@ -118,7 +122,7 @@
       <nav class="flex border-b border-gray-100 overflow-x-auto">
         <template x-for="(tab, idx) in tabs" :key="idx">
           <button
-            @click="activeTab = idx"
+            @click="switchTab(idx)"
             :class="activeTab === idx ? 'tab-active' : 'text-gray-500 hover:text-gray-700'"
             class="px-5 py-4 text-sm whitespace-nowrap transition-all duration-200 focus:outline-none"
             :id="'tab-' + idx"
@@ -771,6 +775,156 @@
           </div>
         </div>
       </div>
+
+      <!-- ═══ TAB 6 — MANAJEMEN BEDS ✨ ══════════════════════════════════ -->
+      <div x-show="activeTab === 6" x-transition class="p-6 fade-in" x-data="bedsManagement()" x-init="init()">
+        <div class="flex items-center justify-between mb-8">
+          <div>
+            <h2 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-600 to-blue-400">Manajemen Beds</h2>
+            <p class="text-xs text-gray-500 mt-1 uppercase tracking-widest font-semibold flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-brand-500"></span> Pengaturan Master Tempat Tidur (Fisik)
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 mb-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Pilih Bangsal (class_room_id)</label>
+              <select x-model="selectedClassRoom" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-sm font-semibold text-gray-800">
+                <option value="">-- Pilih Bangsal --</option>
+                <template x-for="r in classRooms" :key="r">
+                  <option :value="r" x-text="r"></option>
+                </template>
+              </select>
+            </div>
+          </div>
+          <div class="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="text-xs text-brand-600 font-medium">✨ Gunakan Pilih Bangsal untuk memuat seluruh kamar dalam bangsal tersebut secara langsung</div>
+            <button @click="loadBedsData()" :disabled="!selectedClassRoom" class="bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center gap-2">
+              <svg x-show="loadingData" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              Tampilkan Data
+            </button>
+          </div>
+        </div>
+
+        <!-- ══ CONTAINER KESELURUHAN ACCORDION ══ -->
+        <div x-show="showTable" x-transition class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+            <div class="flex items-center gap-3">
+              <div class="px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider"
+                   :class="mode === 'edit' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'">
+                   <span x-text="mode === 'edit' ? '🟡 Mode Edit' : '🟢 Mode Input Baru'"></span>
+              </div>
+              <span class="text-sm font-bold text-gray-800 truncate" x-text="'Bangsal: ' + selectedClassRoom"></span>
+            </div>
+            <button @click="addKamarGroup()" class="text-sm font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-4 py-2 rounded-xl flex items-center gap-2 transition hover:shadow-sm">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg> Tambah Kamar Baru
+            </button>
+          </div>
+
+          <div class="space-y-4">
+            <template x-for="(kg, kgIdx) in kamarsData" :key="kgIdx">
+              <div class="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm transition-all" x-data="{ expanded: true }" :id="'kg-' + kg._ui_id">
+                <!-- Header Accordion -->
+                <div class="flex flex-col sm:flex-row items-center justify-between px-5 py-4 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition group" @click="expanded = !expanded">
+                  <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <svg class="w-5 h-5 text-gray-400 transform transition-transform duration-200" :class="expanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    <div class="font-bold text-gray-800 text-base flex items-center gap-2">
+                       <span x-text="kg.kamar ? ('Kamar: ' + kg.kamar) : '(Ruang Tanpa Kamar)'"></span>
+                       <span class="bg-brand-100 text-brand-700 text-xs px-2 py-0.5 rounded-full font-semibold" x-text="kg.rows.length + ' Bed'"></span>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 mt-3 sm:mt-0 w-full sm:w-auto overflow-hidden">
+                    <button @click.stop="addRowToKamar(kgIdx)" class="text-xs font-bold text-brand-600 bg-white border border-brand-200 px-3 py-1.5 rounded-lg hover:bg-brand-50 shadow-sm transition whitespace-nowrap">
+                      + Tambah Bed
+                    </button>
+                    <button @click.stop="removeKamarGroup(kgIdx)" class="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Hapus Kamar">
+                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Body Accordion (Tabel) -->
+                <div x-show="expanded" x-transition class="p-4 sm:p-5 bg-white">
+                  <!-- Input Nama Kamar -->
+                  <div class="mb-5 bg-brand-50/50 p-4 rounded-xl border border-brand-100 flex flex-col sm:flex-row gap-4 items-center">
+                    <div class="w-full sm:w-1/2">
+                      <label class="block text-xs font-bold text-brand-700 mb-1.5 uppercase tracking-wide">Nama Kelompok Kamar <span class="text-red-500">*</span></label>
+                      <input type="text" x-model="kg.kamar" placeholder="Ketik nama kamar (contoh: VIP A)..." class="w-full px-4 py-2.5 bg-white border border-brand-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all text-sm font-bold text-gray-800" />
+                    </div>
+                    <div class="text-xs text-gray-500 sm:w-1/2 leading-relaxed">
+                      Catatan: Nama kamar ini akan diterapkan pada semua bed (baris) di tabel bawah ini. Kosongkan jika bed ini tidak tergabung dalam spesifik kamar mana pun.
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto pb-2">
+                    <table class="w-full text-sm border-collapse min-w-[1100px]">
+                      <thead>
+                        <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide border-y border-gray-200">
+                          <th class="p-3 text-left font-semibold">bed_id <span class="text-red-500">*</span></th>
+                          <th class="p-3 text-left font-semibold">room_id</th>
+                          <th class="p-3 text-left font-semibold">id_kelas <span class="text-red-500">*</span></th>
+                          <th class="p-3 text-left font-semibold">nm_kelas <span class="text-red-500">*</span></th>
+                          <th class="p-3 text-left font-semibold">id_perawatan</th>
+                          <th class="p-3 text-left font-semibold">nm_perawatan</th>
+                          <th class="p-3 text-left font-semibold">id_tt_siranap</th>
+                          <th class="p-3 text-left font-semibold">id_siranap</th>
+                          <th class="p-3 text-left font-semibold">deskripsi_siranap</th>
+                          <th class="p-3 text-center font-semibold">COVID?</th>
+                          <th class="p-3 text-center"></th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-gray-100">
+                        <template x-for="(row, idx) in kg.rows" :key="idx">
+                          <tr class="hover:bg-brand-50/40 transition-colors group" :id="'row-' + row._ui_id">
+                            <td class="p-2 align-top"><input type="number" x-model.number="row.bed_id" class="w-20 px-2.5 py-2 border border-brand-200 bg-brand-50 rounded-lg font-bold text-brand-800 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.room_id" class="w-24 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.id_kelas" class="w-20 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.nm_kelas" class="w-28 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.id_perawatan" class="w-24 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.nm_perawatan" class="w-28 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.id_tt_siranap" class="w-24 px-2.5 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.id_siranap" class="w-24 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 align-top"><input type="text" x-model="row.deskripsi_siranap" class="w-32 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
+                            <td class="p-2 text-center align-top pt-3">
+                              <label class="cursor-pointer inline-flex items-center">
+                                <input type="checkbox" :checked="row.covid === '1' || row.covid === 1" @change="row.covid = $event.target.checked ? '1' : '0'" class="w-5 h-5 text-orange-500 bg-white border-gray-300 rounded focus:ring-orange-500 transition"/>
+                              </label>
+                            </td>
+                            <td class="p-2 text-center align-top pt-2">
+                              <button @click="removeRowFromKamar(kgIdx, idx)" class="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition" title="Hapus Baris Bed ini">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                              </button>
+                            </td>
+                          </tr>
+                        </template>
+                        <tr x-show="kg.rows.length === 0">
+                           <td colspan="11" class="text-center py-6 text-gray-400 font-medium italic">Tidak ada bed di kamar ini. Klik Tambah Bed untuk memulai.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <div x-show="kamarsData.length === 0" class="text-center py-8 bg-gray-50 border border-gray-200 border-dashed rounded-xl">
+               <p class="text-gray-500 font-medium">Belum ada kamar yang terdaftar. Klik "Tambah Kamar Baru" di atas.</p>
+            </div>
+          </div>
+          
+          <div class="mt-8 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-100 pt-6">
+            <div x-show="saveMsg" class="w-full sm:w-auto px-5 py-3.5 rounded-xl text-sm font-semibold border"
+                 :class="saveSuccess ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'" x-text="saveMsg"></div>
+            <div x-show="!saveMsg" class="hidden sm:block"></div>
+            
+            <button @click="saveBeds()" :disabled="saving || kamarsData.length === 0" class="w-full sm:w-auto px-8 py-3.5 font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl shadow-lg hover:shadow-green-500/30 transition disabled:opacity-50 flex items-center justify-center gap-2">
+              <svg class="w-5 h-5 animate-spin" x-show="saving" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              <span x-text="saving ? 'Menyimpan Transaksi...' : 'Simpan Data Beds'"></span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -780,16 +934,34 @@
 
   <!-- ═══ ALPINE.JS APP STATE ═══════════════════════════════════════════════ -->
   <script>
+    // Global flag for any unsaved changes in form inputs
+    window.isFormDirty = false;
+
     function appState() {
       return {
         activeTab: 0,
+        
+        switchTab(idx) {
+          if (this.activeTab === idx) return;
+          
+          if (window.isFormDirty) {
+            if (!confirm('Ada data yang sedang diubah dan belum disimpan.\nYakin ingin pindah tab? Perubahan Anda mungkin akan hilang.')) {
+              return;
+            }
+          }
+          
+          window.isFormDirty = false; // reset when changing tab
+          this.activeTab = idx;
+        },
+
         tabs: [
           { label: '🏥 Info Ruang' },
           { label: '📋 Referensi TT' },
           { label: '🏨 Master Fasyankes' },
           { label: '⚙️ Manajemen TT' },
           { label: '🔧 Operasional' },
-          { label: '📝 Manajemen SK ✨' }
+          { label: '📝 Manajemen SK ✨' },
+          { label: '🛏️ Manajemen Beds ✨' }
         ],
 
         // Tab 1 — Beds
