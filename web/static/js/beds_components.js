@@ -13,6 +13,10 @@ function bedsManagement() {
     saveMsg: '',
     saveSuccess: false,
     
+    generateUUID() {
+        return Date.now().toString(36) + Math.random().toString(36).substring(2);
+    },
+    
     init() {
       this.fetchClassRooms();
     },
@@ -42,11 +46,22 @@ function bedsManagement() {
         this.mode = data.mode || 'new';
         this.kamarsData = data.kamars || [];
         
-        // Inject UI ID for animation/scrolling
+        // Inject UI ID for animation/scrolling & provide empty row if needed
         for (let kg of this.kamarsData) {
-            kg._ui_id = crypto.randomUUID();
-            for (let r of kg.rows) {
-                r._ui_id = crypto.randomUUID();
+            kg._ui_id = this.generateUUID();
+            if (!kg.rows || kg.rows.length === 0) {
+                kg.rows = [{
+                    bed_id: '', room_id: '', id_kelas: '', nm_kelas: '', 
+                    id_perawatan: '', nm_perawatan: '', 
+                    id_tt_siranap: kg.defaults ? kg.defaults.id_tt_siranap : '', 
+                    id_siranap: '', deskripsi_siranap: '', 
+                    covid: kg.defaults ? kg.defaults.covid : '0',
+                    _ui_id: this.generateUUID()
+                }];
+            } else {
+                for (let r of kg.rows) {
+                    r._ui_id = r._ui_id || this.generateUUID();
+                }
             }
         }
         
@@ -64,13 +79,13 @@ function bedsManagement() {
     },
     
     addKamarGroup() {
-       const kgId = crypto.randomUUID();
+       const kgId = this.generateUUID();
        this.kamarsData.push({
            _ui_id: kgId,
            kamar: '',
            defaults: { id_tt_siranap: '', covid: '0' },
            rows: [{
-               _ui_id: crypto.randomUUID(),
+               _ui_id: this.generateUUID(),
                bed_id: '', room_id: '', id_kelas: '', nm_kelas: '', 
                id_perawatan: '', nm_perawatan: '', id_tt_siranap: '', 
                id_siranap: '', deskripsi_siranap: '', covid: '0'
@@ -95,7 +110,7 @@ function bedsManagement() {
     
     addRowToKamar(kgIdx) {
       const kg = this.kamarsData[kgIdx];
-      const newId = crypto.randomUUID();
+      const newId = this.generateUUID();
       if (kg.rows.length > 0) {
         const lastRow = kg.rows[kg.rows.length - 1];
         kg.rows.push({

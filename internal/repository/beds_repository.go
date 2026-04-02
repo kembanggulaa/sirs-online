@@ -126,9 +126,24 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 				kName := k.String
 				if _, exists := kamarDefaults[kName]; !exists {
 					kamarDefaults[kName] = map[string]string{"id_tt_siranap": "", "covid": "0"}
+					
+					// Populate initial kamarsMap so the user immediately sees all kamars defined in sk_bed
+					kamarsMap[kName] = &BedsKamarGroup{
+						Kamar:    kName,
+						Defaults: kamarDefaults[kName],
+						Rows:     []BedRow{},
+					}
+					kamarOrder = append(kamarOrder, kName)
 				}
-				if idTT.Valid { kamarDefaults[kName]["id_tt_siranap"] = idTT.String }
-				if cov.Valid { kamarDefaults[kName]["covid"] = fmt.Sprintf("%d", cov.Int64) }
+				if idTT.Valid {
+					kamarDefaults[kName]["id_tt_siranap"] = idTT.String
+					kamarsMap[kName].Defaults["id_tt_siranap"] = idTT.String
+				}
+				if cov.Valid {
+					strCov := fmt.Sprintf("%d", cov.Int64)
+					kamarDefaults[kName]["covid"] = strCov
+					kamarsMap[kName].Defaults["covid"] = strCov
+				}
 			}
 		}
 		rowsDef.Close()
