@@ -107,6 +107,10 @@
       </div>
       <div class="flex items-center gap-4">
         <span class="text-blue-200 text-sm hidden sm:block" x-text="currentTime"></span>
+        <button @click="openDocs()" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+          Panduan
+        </button>
         <!-- Worker status badge -->
         <span class="px-3 py-1 rounded-full text-xs font-semibold"
           :class="workerStatus === 'Running' ? 'status-badge-running' : 'status-badge-idle'"
@@ -1004,7 +1008,87 @@
         loadingLogs: false,
         currentTime: '',
 
+        // Dokumentasi / Onboarding Modal
+        showDocs: false,
+        docSlide: 0,
+        hideDocsFuture: false,
+        docSlides: [
+          {
+            icon: '🚀',
+            title: 'Selamat Datang di SIRS V3',
+            desc: 'Sistem bridging ini menghubungkan data SIMRS RSUD Sleman langsung ke RS Online Kemenkes. <br><br>Alur utamanya: <b>(1) Set SK & Beds</b>, lalu <b>(2) Worker Otomatis</b> akan rutin mengirim ketersediaan bed ke Kemenkes.',
+            color: 'from-brand-500 to-indigo-500',
+            bg: 'bg-gradient-to-br from-brand-50 to-indigo-50'
+          },
+          {
+            icon: '🏥',
+            title: 'Tab 1: Info Ruang',
+            desc: 'Pada tab ini Anda bisa memantau secara <i>real-time</i> ketersediaan bed di rumah sakit Anda hasil kalkulasi DB SIMRS.<br><br>Bar Occupancy akan berubah menjadi hijau, kuning, atau merah tergantung persentase keterisian.',
+            color: 'from-blue-500 to-cyan-500',
+            bg: 'bg-gradient-to-br from-blue-50 to-cyan-50'
+          },
+          {
+            icon: '📋',
+            title: 'Tab 2 & 3: Master Data',
+            desc: '<b>Master Referensi</b> menampilkan katalog TT resmi Kemenkes.<br><br><b>Master Fasyankes</b> adalah data RS kita yang sudah pernah diinputkan ke sistem Kemenkes. Anda bisa menekan tombol <b>"Gunakan PUT"</b> untuk mengedit data.',
+            color: 'from-emerald-500 to-teal-500',
+            bg: 'bg-gradient-to-br from-emerald-50 to-teal-50'
+          },
+          {
+            icon: '⚙️',
+            title: 'Tab 4: Manajemen TT',
+            desc: 'Digunakan jika Anda ingin nge-<i>push</i> data ruang TT secara manual untuk kasus gawat darurat atau perbaikan data.<br><br>Gunakan form POST untuk membuat data baru di Kemenkes, atau form PUT untuk update ruang yang sudah ada.',
+            color: 'from-orange-500 to-amber-500',
+            bg: 'bg-gradient-to-br from-orange-50 to-amber-50'
+          },
+          {
+            icon: '📝',
+            title: 'Tab 5: Manajemen SK',
+            desc: `<p class="mb-3 text-sm">Digunakan saat ada rilis kebijakan SK Tempat Tidur baru (berlaku untuk mengupdate seluruh referensi). Alurnya:</p>
+                   <ul class="text-left text-sm space-y-2.5 ml-4 list-decimal marker:text-fuchsia-600 font-medium">
+                     <li><b>Step 1 (Header):</b> Isi <i>Nomor SK Baru</i> dan <i>Tanggal Berlaku</i>. Anda juga bisa klik <b>Unggah Excel</b> untuk jalur cepat.</li>
+                     <li><b>Step 2 (Input Data):</b> Isi data bangsal per baris. Gunakan tombol <code class="bg-fuchsia-100 text-fuchsia-800 px-1 rounded">Duplikat</code> jika kamar berada di bangsal yang sama agar lebih cepat. <b>Format pengisian harus sesuai kolom Kemenkes standar.</b></li>
+                     <li><b>Step 3 (Preview):</b> Cek ringkasan. Jika disimpan, SK yang lama akan otomatis "pensiun" tanpa perlu repot hapus data manual.</li>
+                   </ul>`,
+            color: 'from-fuchsia-500 to-purple-500',
+            bg: 'bg-gradient-to-br from-fuchsia-50 to-purple-50'
+          },
+          {
+            icon: '🛏️',
+            title: 'Tab 6: Manajemen Beds',
+            desc: `<p class="mb-3 text-sm">Setelah SK dibuat, Anda <b>WAJIB</b> memetakan nomor bed untuk setiap ruangan. Alurnya:</p>
+                   <ul class="text-left text-sm space-y-2.5 ml-4 list-decimal marker:text-pink-600 font-medium">
+                     <li><b>Pilih Bangsal:</b> Pilih bangsal dari dropdown. Bangsal ini bersumber dari SK yang baru saja Anda buat di Tab 5.</li>
+                     <li><b>Manajemen Kamar:</b> Klik <code class="bg-pink-100 text-pink-800 px-1 rounded">Tambah Kamar Baru</code>. Anda bisa mengelompokkan bed per kamar (contoh: Kamar 1, Kamar 2).</li>
+                     <li><b>Manajemen Bed:</b> Klik <code class="bg-pink-100 text-pink-800 px-1 rounded">+ Tambah Bed</code> untuk menambah baris. Isi <b>bed_id</b> dan spesifikasi lainnya. <br><i>Centang opsi COVID jika bed dikhususkan isolasi.</i></li>
+                     <li>Klik <b>Simpan Data Beds</b>. Pekerjaan Anda selesai!</li>
+                   </ul>`,
+            color: 'from-pink-500 to-rose-500',
+            bg: 'bg-gradient-to-br from-pink-50 to-rose-50'
+          },
+          {
+            icon: '🔧',
+            title: 'Tab: Operasional',
+            desc: 'Tempat Anda mengontrol "Nyawa" sistem otomatisasi.<br><br>Anda dapat melihat Log proses sinkronisasi, mengecek status Worker (Running/Idle), dan menekan <b>Trigger Sync Now</b> tanpa harus menunggu 2 jam berikutnya.',
+            color: 'from-gray-700 to-gray-500',
+            bg: 'bg-gradient-to-br from-gray-100 to-gray-50'
+          },
+          {
+            icon: '🏁',
+            title: 'Sudah Siap!',
+            desc: 'Mari mulai. Saat ini status Worker berjalan memantau setiap data bed. Jangan ragu memantau log atau mengubah tab jika diperlukan.',
+            color: 'from-green-500 to-emerald-500',
+            bg: 'bg-gradient-to-br from-green-50 to-emerald-50'
+          }
+        ],
+
         init() {
+          if (localStorage.getItem('hideSirsDocs') !== 'true') {
+            this.showDocs = true;
+          } else {
+            this.hideDocsFuture = true;
+          }
+
           this.loadBeds();
           this.loadWorkerStatus();
           this.loadLogs();
@@ -1026,6 +1110,20 @@
           this.currentTime = new Date().toLocaleTimeString('id-ID', {
             hour: '2-digit', minute: '2-digit', second: '2-digit'
           });
+        },
+
+        openDocs() {
+          this.docSlide = 0;
+          this.showDocs = true;
+        },
+        
+        closeDocs() {
+          this.showDocs = false;
+          if (this.hideDocsFuture) {
+            localStorage.setItem('hideSirsDocs', 'true');
+          } else {
+            localStorage.removeItem('hideSirsDocs');
+          }
         },
 
         async loadBeds() {
@@ -1184,5 +1282,97 @@
       };
     }
   </script>
+  <!-- ═══ MODAL DOKUMENTASI (ONBOARDING CAROUSEL) ═══════════════════════════ -->
+  <div x-show="showDocs" 
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-md p-4 sm:p-6"
+       style="display: none;">
+       
+    <div class="bg-white w-full max-w-2xl rounded-3xl shadow-[0_10px_50px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col max-h-[90vh] ring-1 ring-white/20" 
+         @click.outside="closeDocs()">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white z-10">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+          <span class="w-6 h-6 rounded-md bg-brand-50 text-brand-600 flex items-center justify-center">
+             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path></svg>
+          </span>
+          Panduan Penggunaan
+        </h3>
+        <button @click="closeDocs()" class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      
+      <!-- Modal Body (Carousel) -->
+      <div class="flex-1 overflow-hidden relative" style="min-height: 420px;">
+        <template x-for="(slide, index) in docSlides" :key="index">
+          <div x-show="docSlide === index" 
+               x-transition:enter="transition ease-out duration-300 transform"
+               x-transition:enter-start="opacity-0 translate-x-12"
+               x-transition:enter-end="opacity-100 translate-x-0"
+               class="absolute inset-0 flex flex-col p-8 sm:p-12 items-center text-center justify-center"
+               :class="slide.bg">
+               
+            <div class="w-24 h-24 mb-8 transform -rotate-3 hover:rotate-0 transition duration-300 rounded-3xl bg-gradient-to-br flex items-center justify-center text-5xl shadow-xl border-4 border-white"
+                 :class="slide.color">
+              <span class="transform drop-shadow-md" x-text="slide.icon"></span>
+            </div>
+            
+            <div class="space-y-4 max-w-lg mx-auto bg-white/60 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-white/50">
+              <h2 class="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r" :class="slide.color" x-text="slide.title"></h2>
+              <p class="text-gray-700 leading-relaxed font-medium" x-html="slide.desc"></p>
+            </div>
+          </div>
+        </template>
+      </div>
+      
+      <!-- Modal Footer -->
+      <div class="px-6 py-5 border-t border-gray-100 bg-white flex flex-col sm:flex-row items-center justify-between gap-4 z-10 relative">
+        <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-500 font-medium hover:text-gray-800 transition">
+          <input type="checkbox" x-model="hideDocsFuture" class="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 transition" />
+          Jangan tampilkan lagi
+        </label>
+        
+        <div class="flex items-center gap-3">
+          <!-- Prev Button -->
+          <button @click="docSlide = Math.max(0, docSlide - 1)" 
+                  class="w-10 h-10 flex items-center justify-center text-gray-500 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl transition border-b-2 active:border-b disabled:opacity-30 disabled:cursor-not-allowed"
+                  :disabled="docSlide === 0">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+          </button>
+          
+          <!-- Dots -->
+          <div class="flex gap-1.5 px-2">
+            <template x-for="(s, i) in docSlides" :key="i">
+              <button @click="docSlide = i" 
+                      class="h-2 rounded-full transition-all duration-300 pointer-events-auto"
+                      :class="docSlide === i ? 'w-6 bg-brand-500' : 'w-2 bg-gray-300 hover:bg-gray-400'"></button>
+            </template>
+          </div>
+          
+          <!-- Next Button -->
+          <button @click="docSlide = Math.min(docSlides.length - 1, docSlide + 1)" 
+                  class="w-10 h-10 flex items-center justify-center text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-xl transition border-b-2 active:border-b disabled:opacity-30 disabled:cursor-not-allowed"
+                  x-show="docSlide < docSlides.length - 1">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg>
+          </button>
+          
+          <!-- Finish Button -->
+          <button @click="closeDocs()" 
+                  class="px-5 py-2.5 font-bold text-white bg-green-500 hover:bg-green-600 border border-green-600 border-b-2 rounded-xl transition active:border-b"
+                  x-show="docSlide === docSlides.length - 1">
+            Selesai & Masuk
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
