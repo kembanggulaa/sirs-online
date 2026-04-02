@@ -163,7 +163,12 @@ func run() {
 // makeProxyHandler membuat handler GET read-only ke Kemenkes (untuk Tab 2)
 func makeProxyHandler(cfg *config.Config, method, url string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		client := resty.New().SetTimeout(15 * time.Second)
+		// DisableKeepAlives untuk mencegah EOF karena Kemenkes API sering drop koneksi reuse
+		client := resty.New().
+			SetTimeout(15 * time.Second).
+			SetTransport(&http.Transport{
+				DisableKeepAlives: true,
+			})
 		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
 
 		resp, err := client.R().
@@ -193,7 +198,12 @@ func makeKemenkesForwardHandler(cfg *config.Config, method, url string) http.Han
 		}
 		defer func() { _ = r.Body.Close() }()
 
-		client := resty.New().SetTimeout(15 * time.Second)
+		// DisableKeepAlives untuk mencegah EOF dari proxy Kemenkes
+		client := resty.New().
+			SetTimeout(15 * time.Second).
+			SetTransport(&http.Transport{
+				DisableKeepAlives: true,
+			})
 		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
 
 		resp, err := client.R().

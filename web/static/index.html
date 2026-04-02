@@ -1046,10 +1046,16 @@
             title: 'Tab 5: Manajemen SK',
             desc: `<p class="mb-3 text-sm">Digunakan saat ada rilis kebijakan SK Tempat Tidur baru (berlaku untuk mengupdate seluruh referensi). Alurnya:</p>
                    <ul class="text-left text-sm space-y-2.5 ml-4 list-decimal marker:text-fuchsia-600 font-medium">
-                     <li><b>Step 1 (Header):</b> Isi <i>Nomor SK Baru</i> dan <i>Tanggal Berlaku</i>. Anda juga bisa klik <b>Unggah Excel</b> untuk jalur cepat.</li>
-                     <li><b>Step 2 (Input Data):</b> Isi data bangsal per baris. Gunakan tombol <code class="bg-fuchsia-100 text-fuchsia-800 px-1 rounded">Duplikat</code> jika kamar berada di bangsal yang sama agar lebih cepat. <b>Format pengisian harus sesuai kolom Kemenkes standar.</b></li>
-                     <li><b>Step 3 (Preview):</b> Cek ringkasan. Jika disimpan, SK yang lama akan otomatis "pensiun" tanpa perlu repot hapus data manual.</li>
-                   </ul>`,
+                     <li><b>Step 1 (Header):</b> Isi <i>Nomor SK Baru</i> dan <i>Tanggal Berlaku</i>. Anda juga bisa klik <b>Unggah Excel</b>.</li>
+                     <li><b>Step 2 (Input Data):</b> Isi data bangsal per baris. <b>Format pengisian harus sesuai kolom Kemenkes standar.</b></li>
+                     <li><b>Step 3 (Preview):</b> Cek ringkasan. Menyimpan form ini akan mempensiunkan SK yang lama secara otomatis.</li>
+                   </ul>
+                   <div class="mt-3 text-left bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg p-2.5">
+                     <p class="text-xs font-bold text-fuchsia-800 mb-1">📝 Format Header Excel yang Dibutuhkan (Urut 15 Kolom):</p>
+                     <p class="text-[10px] sm:text-xs text-fuchsia-900/80 leading-relaxed font-mono">
+                       clinic_id, class_room_id, kelas, bed, id_tt_siranap, ruang_siranap, kelas_siranap, covid, siranap, jml_ruang_siranap, kodekelas, namakelas, namaruang, kris, kamar
+                     </p>
+                   </div>`,
             color: 'from-fuchsia-500 to-purple-500',
             bg: 'bg-gradient-to-br from-fuchsia-50 to-purple-50'
           },
