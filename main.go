@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-resty/resty/v2"
 	_ "github.com/microsoft/go-mssqldb"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/debug"
@@ -75,7 +74,8 @@ func run() {
 	defer logger.Close()
 
 	logger.Info("=== SIRS Online Bridging V3 start ===")
-	logger.Info("PORT=%d | INTERVAL=%dj | LOG=%s", cfg.AppPort, cfg.SyncIntervalHours, cfg.LogFile)
+	logger.Info("PORT=%d | INTERVAL=%dj | LOG=%s | TLS_SKIP_VERIFY=%v",
+		cfg.AppPort, cfg.SyncIntervalHours, cfg.LogFile, cfg.TLSSkipVerify)
 
 	// 3. Koneksi ke SQL Server SIMRS
 	dsn := fmt.Sprintf(
@@ -148,8 +148,8 @@ func run() {
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 	}
 
 	if err := srv.ListenAndServe(); err != nil {
@@ -160,16 +160,14 @@ func run() {
 
 // ─── Proxy Helpers ────────────────────────────────────────────────────────────
 
-// makeProxyHandler membuat handler GET read-only ke Kemenkes (untuk Tab 2)
+// makeProxyHandler membuat handler GET read-only ke Kemenkes (untuk Tab 2 & 3).
+// Menggunakan shared client dengan TLS skip verify dan logging diagnostik.
 func makeProxyHandler(cfg *config.Config, method, url string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// DisableKeepAlives untuk mencegah EOF karena Kemenkes API sering drop koneksi reuse
-		client := resty.New().
-			SetTimeout(15 * time.Second).
-			SetTransport(&http.Transport{
-				DisableKeepAlives: true,
-			})
+		client := worker.NewKemenkesClient(cfg.TLSSkipVerify)
 		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+
+		logger.Info("[PROXY] %s %s", method, url)
 
 		resp, err := client.R().
 			SetHeader("X-rs-id", cfg.APIRsID).
@@ -178,33 +176,46 @@ func makeProxyHandler(cfg *config.Config, method, url string) http.HandlerFunc {
 			Execute(method, url)
 
 		if err != nil {
-			http.Error(w, "Gagal menghubungi API Kemenkes: "+err.Error(), http.StatusBadGateway)
+			logger.Error("[PROXY] Gagal %s %s: %v", method, url, err)
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "Gagal menghubungi API Kemenkes: " + err.Error(),
+			})
 			return
 		}
 
+		logger.Info("[PROXY] %s %s → status %d (%d bytes)",
+			method, url, resp.StatusCode(), len(resp.Body()))
+
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(resp.StatusCode())
 		_, _ = w.Write(resp.Body())
 	}
 }
 
-// makeKemenkesForwardHandler meneruskan request POST/PUT dari dashboard ke Kemenkes
+// makeKemenkesForwardHandler meneruskan request POST/PUT dari dashboard ke Kemenkes.
+// Menggunakan shared client dengan TLS skip verify dan logging diagnostik.
 func makeKemenkesForwardHandler(cfg *config.Config, method, url string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "Body tidak valid: "+err.Error(), http.StatusBadRequest)
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "Body tidak valid: " + err.Error(),
+			})
 			return
 		}
 		defer func() { _ = r.Body.Close() }()
 
-		// DisableKeepAlives untuk mencegah EOF dari proxy Kemenkes
-		client := resty.New().
-			SetTimeout(15 * time.Second).
-			SetTransport(&http.Transport{
-				DisableKeepAlives: true,
-			})
+		client := worker.NewKemenkesClient(cfg.TLSSkipVerify)
 		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+
+		logger.Info("[PROXY] %s %s", method, url)
 
 		resp, err := client.R().
 			SetHeader("X-rs-id", cfg.APIRsID).
@@ -215,11 +226,21 @@ func makeKemenkesForwardHandler(cfg *config.Config, method, url string) http.Han
 			Execute(method, url)
 
 		if err != nil {
-			http.Error(w, "Gagal menghubungi API Kemenkes: "+err.Error(), http.StatusBadGateway)
+			logger.Error("[PROXY] Gagal %s %s: %v", method, url, err)
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "Gagal menghubungi API Kemenkes: " + err.Error(),
+			})
 			return
 		}
 
+		logger.Info("[PROXY] %s %s → status %d (%d bytes)",
+			method, url, resp.StatusCode(), len(resp.Body()))
+
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(resp.StatusCode())
 		_, _ = w.Write(resp.Body())
 	}

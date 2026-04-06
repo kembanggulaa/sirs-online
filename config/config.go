@@ -27,6 +27,7 @@ type Config struct {
 	RetryMax           int
 	LogFile            string
 	ExecutiveAPIURL    string
+	TLSSkipVerify      bool
 }
 
 // Load membaca konfigurasi dari file .env menggunakan Viper
@@ -56,5 +57,6 @@ func Load() *Config {
 		RetryMax:          viper.GetInt("RETRY_MAX"),
 		LogFile:           viper.GetString("LOG_FILE"),
 		ExecutiveAPIURL:   viper.GetString("EXECUTIVE_API_URL"),
+		TLSSkipVerify:     viper.GetBool("TLS_SKIP_VERIFY"),
 	}
 }
