@@ -65,56 +65,24 @@ func (r *BedRepository) GetActiveSKNo() (string, error) {
 	return skNo, nil
 }
 
-// GetBedAvailability mengambil data ketersediaan tempat tidur menggunakan
-// satu transaksi SQL Server (karena temp table #temp_ranap hanya hidup dalam satu sesi).
-//
-// Urutan query:
-//  1. Query 1 — CREATE #temp_ranap (pasien rawat inap aktif)
-//  2. Query 2 — SELECT dengan LEFT JOIN ke #temp_ranap
 func (r *BedRepository) GetBedAvailability(skNo string) ([]BedSiranap, error) {
-	// Buka transaksi — wajib agar #temp_ranap hidup sepanjang kedua query
-	tx, err := r.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("gagal membuka transaksi: %w", err)
-	}
-	defer func() {
-		// Rollback jika tidak di-commit (cleanup temp table juga ikut bersama sesi)
-		_ = tx.Rollback()
-	}()
-
-	// ─── Query 1: Buat temp table pasien rawat inap aktif ───────────────────
-	// Menggunakan named parameter @sk_no via mssql.Named untuk mencegah SQL injection.
-	// Catatan: go-mssqldb mendukung named param dalam subquery IN clause.
-	query1 := `
-		SELECT
-			no_registration,
-			class_room_id,
-			BED_ID,
-			keluar_id,
-			(SELECT CONCAT(class_room_id, kamar)
-			 FROM beds b
-			 WHERE b.class_room_id = pv.CLASS_ROOM_ID
-			   AND b.bed_id = pv.bed_id) AS kamar
-		INTO #temp_ranap
-		FROM pasien_visitation pv
-		WHERE no_registration <> ''
-		  AND class_room_id IS NOT NULL
-		  AND (pv.keluar_id = 0 OR pv.keluar_id = 33)
-		  AND class_room_id IN (
-			SELECT DISTINCT class_room_id
-			FROM sk_bed
-			WHERE sk_no = @sk_no
-			  AND tgl_berakhir IS NULL
-			  AND class_room_id <> 'NI.BX'
-		  )
-		ORDER BY kamar`
-
-	if _, err := tx.Exec(query1, sql.Named("sk_no", skNo)); err != nil {
-		return nil, fmt.Errorf("query 1 (temp table) gagal: %w", err)
-	}
-
-	// ─── Query 2: Ambil ketersediaan bed dengan LEFT JOIN ke #temp_ranap ────
-	query2 := `
+	// ─── Query: Ambil ketersediaan bed menggunakan CTE ────
+	query := `
+		WITH TempRanap AS (
+			SELECT CONCAT(b.class_room_id, b.kamar) AS kamar
+			FROM pasien_visitation pv WITH (NOLOCK)
+			LEFT JOIN beds b WITH (NOLOCK) ON b.class_room_id = pv.CLASS_ROOM_ID AND b.bed_id = pv.bed_id
+			WHERE pv.no_registration <> ''
+			  AND pv.class_room_id IS NOT NULL
+			  AND (pv.keluar_id = 0 OR pv.keluar_id = 33)
+			  AND pv.class_room_id IN (
+				SELECT DISTINCT class_room_id
+				FROM sk_bed WITH (NOLOCK)
+				WHERE sk_no = ?
+				  AND tgl_berakhir IS NULL
+				  AND class_room_id <> 'NI.BX'
+			  )
+		)
 		SELECT
 			sk.id_tt_siranap,
 			sk.class_room_id,
@@ -129,14 +97,14 @@ func (r *BedRepository) GetBedAvailability(skNo string) ([]BedSiranap, error) {
 			sc.konfirmasi,
 			sc.antrian,
 			ISNULL(t.terisi, 0) AS terisi
-		FROM sk_bed sk
-			INNER JOIN status_covid sc ON sc.id_tt = sk.id_tt_siranap
+		FROM sk_bed sk WITH (NOLOCK)
+			INNER JOIN status_covid sc WITH (NOLOCK) ON sc.id_tt = sk.id_tt_siranap
 			LEFT JOIN (
 				SELECT kamar, COUNT(*) AS terisi
-				FROM #temp_ranap
+				FROM TempRanap
 				GROUP BY kamar
 			) t ON t.kamar = CONCAT(sk.class_room_id, sk.kamar)
-		WHERE sk.sk_no = @sk_no
+		WHERE sk.sk_no = ?
 		  AND sk.tgl_berakhir IS NULL
 		  AND sk.class_room_id <> 'NI.BX'
 		GROUP BY
@@ -145,9 +113,10 @@ func (r *BedRepository) GetBedAvailability(skNo string) ([]BedSiranap, error) {
 			sc.status, sc.konfirmasi, sc.antrian, t.terisi
 		ORDER BY sk.siranap, sk.ruang_siranap`
 
-	rows, err := tx.Query(query2, sql.Named("sk_no", skNo))
+	// Karena CTE menggunakan '?' di 2 tempat, kita mengirim skNo dua kali.
+	rows, err := r.db.Query(query, skNo, skNo)
 	if err != nil {
-		return nil, fmt.Errorf("query 2 (ketersediaan bed) gagal: %w", err)
+		return nil, fmt.Errorf("query ketersediaan bed gagal: %w", err)
 	}
 	defer rows.Close()
 
@@ -177,11 +146,6 @@ func (r *BedRepository) GetBedAvailability(skNo string) ([]BedSiranap, error) {
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterasi rows gagal: %w", err)
-	}
-
-	// Commit transaksi — temp table otomatis hilang setelah sesi selesai
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit transaksi gagal: %w", err)
 	}
 
 	return beds, nil

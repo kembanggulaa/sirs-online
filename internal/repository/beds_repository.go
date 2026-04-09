@@ -57,7 +57,7 @@ func NewBedsRepository(db *sql.DB, orgUnitCode string) *BedsRepository {
 
 // GetDistinctClassRooms mengambil daftar class_room_id unik dari sk_bed aktif.
 func (r *BedsRepository) GetDistinctClassRooms(ctx context.Context) ([]string, error) {
-	query := `SELECT DISTINCT class_room_id FROM sk_bed WHERE tgl_berakhir IS NULL ORDER BY class_room_id`
+	query := `SELECT DISTINCT class_room_id FROM sk_bed WITH (NOLOCK) WHERE tgl_berakhir IS NULL ORDER BY class_room_id`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("gagal query class_room_id: %w", err)
@@ -82,7 +82,7 @@ func (r *BedsRepository) GetDistinctClassRooms(ctx context.Context) ([]string, e
 
 // GetKamarByClassRoom mengambil daftar kamar berdasarkan class_room_id dari sk_bed.
 func (r *BedsRepository) GetKamarByClassRoom(ctx context.Context, classRoomID string) ([]string, error) {
-	query := `SELECT DISTINCT kamar FROM sk_bed WHERE class_room_id = @p1 AND tgl_berakhir IS NULL ORDER BY kamar`
+	query := `SELECT DISTINCT kamar FROM sk_bed WITH (NOLOCK) WHERE class_room_id = @p1 AND tgl_berakhir IS NULL ORDER BY kamar`
 	rows, err := r.db.QueryContext(ctx, query, classRoomID)
 	if err != nil {
 		return nil, fmt.Errorf("gagal query kamar: %w", err)
@@ -123,7 +123,7 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 	// 1. Fetch defaults dari sk_bed berdasarkan kamar
 	queryDefaults := `
 		SELECT ISNULL(kamar, ''), id_tt_siranap, covid 
-		FROM sk_bed 
+		FROM sk_bed WITH (NOLOCK)
 		WHERE class_room_id = @p1 AND tgl_berakhir IS NULL
 	`
 	rowsDef, err := r.db.QueryContext(ctx, queryDefaults, classRoomID)
@@ -168,7 +168,7 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 	queryBeds := `
 		SELECT bed_id, ISNULL(kamar, ''), room_id, id_kelas, nm_kelas, id_perawatan, nm_perawatan, 
 		       id_tt_siranap, id_siranap, deskripsi_siranap, covid
-		FROM beds
+		FROM beds WITH (NOLOCK)
 		WHERE class_room_id = @p1
 		ORDER BY kamar, bed_id
 	`
