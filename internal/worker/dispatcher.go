@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"time"
 
 	"sirs-online/config"
@@ -10,7 +11,7 @@ import (
 
 // Job membawa semua konteks yang dibutuhkan satu siklus sync
 type Job struct {
-	Repo   *repository.BedRepository
+	Repo   repository.BedRepositoryInterface
 	Config *config.Config
 }
 
@@ -18,12 +19,12 @@ type Job struct {
 type Dispatcher struct {
 	jobQueue chan Job
 	done     chan struct{}
-	repo     *repository.BedRepository
+	repo     repository.BedRepositoryInterface
 	cfg      *config.Config
 }
 
 // NewDispatcher membuat Dispatcher baru dan memulai listener worker
-func NewDispatcher(repo *repository.BedRepository, cfg *config.Config) *Dispatcher {
+func NewDispatcher(repo repository.BedRepositoryInterface, cfg *config.Config) *Dispatcher {
 	d := &Dispatcher{
 		jobQueue: make(chan Job, 1),
 		done:     make(chan struct{}),
@@ -37,7 +38,14 @@ func NewDispatcher(repo *repository.BedRepository, cfg *config.Config) *Dispatch
 
 // Start memulai Ticker otomatis setiap interval yang dikonfigurasi.
 // Harus dipanggil di goroutine terpisah.
+// Deprecated: gunakan StartWithContext untuk dukungan graceful shutdown.
 func (d *Dispatcher) Start() {
+	d.StartWithContext(context.Background())
+}
+
+// StartWithContext memulai Ticker otomatis dan menghentikannya saat ctx selesai.
+// Harus dipanggil di goroutine terpisah.
+func (d *Dispatcher) StartWithContext(ctx context.Context) {
 	interval := time.Duration(d.cfg.SyncIntervalHours) * time.Hour
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -51,9 +59,13 @@ func (d *Dispatcher) Start() {
 		case <-d.done:
 			logger.Info("Dispatcher dihentikan.")
 			return
+		case <-ctx.Done():
+			logger.Info("Dispatcher dihentikan (context cancelled).")
+			return
 		}
 	}
 }
+
 
 // TriggerManual mengirim Job secara manual (dari tombol Sync Now di dashboard).
 // Mengembalikan false jika worker sedang berjalan (skip).

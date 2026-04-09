@@ -28,6 +28,11 @@ type Config struct {
 	LogFile            string
 	ExecutiveAPIURL    string
 	TLSSkipVerify      bool
+	OrgUnitCode        string
+
+	// Keamanan
+	DashboardOrigin string // asal dashboard untuk header CORS (misal: http://localhost:9271)
+	MaxBodyBytes    int64  // batas ukuran request body POST/PUT (default: 1 MB)
 }
 
 // Load membaca konfigurasi dari file .env menggunakan Viper
@@ -58,5 +63,8 @@ func Load() *Config {
 		LogFile:           viper.GetString("LOG_FILE"),
 		ExecutiveAPIURL:   viper.GetString("EXECUTIVE_API_URL"),
 		TLSSkipVerify:     viper.GetBool("TLS_SKIP_VERIFY"),
+		OrgUnitCode:       viper.GetString("ORG_UNIT_CODE"),
+		DashboardOrigin:   viper.GetString("DASHBOARD_ORIGIN"),
+		MaxBodyBytes:      viper.GetInt64("MAX_BODY_BYTES"),
 	}
 }

@@ -1,7 +1,9 @@
 package logger
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -65,38 +67,110 @@ func Error(format string, args ...interface{}) {
 	}
 }
 
-// ReadLast membaca n baris terakhir dari file log
+// ReadLast membaca n baris terakhir dari file log secara efisien
+// menggunakan seek-from-end untuk menghindari membaca seluruh file ke memori.
 func ReadLast(logPath string, n int) ([]string, error) {
-	data, err := os.ReadFile(logPath)
+	f, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("gagal membuka file log: %w", err)
+	}
+	defer f.Close()
+
+	// Dapatkan ukuran file
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("gagal stat file log: %w", err)
+	}
+	size := info.Size()
+	if size == 0 {
+		return []string{}, nil
 	}
 
-	lines := splitLines(string(data))
-	if len(lines) <= n {
-		return lines, nil
-	}
-	return lines[len(lines)-n:], nil
-}
+	// Baca file dari belakang, blok per blok, sampai kita punya cukup baris
+	const chunkSize = 8192
+	var buf []byte
+	remaining := size
 
-func splitLines(s string) []string {
-	var lines []string
-	current := ""
-	for _, r := range s {
-		if r == '\n' {
-			if current != "" {
-				lines = append(lines, current)
-				current = ""
-			}
-		} else {
-			current += string(r)
+	for remaining > 0 {
+		toRead := int64(chunkSize)
+		if toRead > remaining {
+			toRead = remaining
+		}
+		remaining -= toRead
+
+		if _, err := f.Seek(remaining, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("seek gagal: %w", err)
+		}
+
+		chunk := make([]byte, toRead)
+		if _, err := io.ReadFull(f, chunk); err != nil {
+			return nil, fmt.Errorf("gagal baca chunk: %w", err)
+		}
+		buf = append(chunk, buf...)
+
+		// Hitung berapa baris yang sudah kita punya
+		lineCount := countLines(buf)
+		if lineCount > n {
+			break
 		}
 	}
-	if current != "" {
-		lines = append(lines, current)
+
+	// Parse baris dari buffer yang sudah terkumpul
+	lines := scanLines(buf)
+
+	// Kembalikan n baris terakhir
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines, nil
+}
+
+// countLines menghitung jumlah baris dalam byte slice.
+func countLines(b []byte) int {
+	count := 0
+	for _, c := range b {
+		if c == '\n' {
+			count++
+		}
+	}
+	return count
+}
+
+// scanLines memisahkan byte slice menjadi slice of non-empty strings menggunakan bufio.Scanner.
+// Menggantikan splitLines() O(n²) yang menggunakan string concatenation.
+func scanLines(b []byte) []string {
+	// Gunakan bufio.Scanner untuk O(n) parsing daripada string concatenation rune-by-rune
+	type nopCloser struct{ *bufio.Scanner }
+
+	scanner := bufio.NewScanner(newByteReader(b))
+	var lines []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			lines = append(lines, line)
+		}
 	}
 	return lines
+}
+
+// newByteReader membungkus []byte sebagai io.Reader untuk digunakan oleh bufio.Scanner.
+type byteReader struct {
+	data []byte
+	pos  int
+}
+
+func newByteReader(b []byte) *byteReader {
+	return &byteReader{data: b}
+}
+
+func (r *byteReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
 }

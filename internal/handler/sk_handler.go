@@ -4,15 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"sirs-online/config"
 	"sirs-online/internal/repository"
 )
 
 type SKHandler struct {
-	repo *repository.SKRepository
+	repo repository.SKRepositoryInterface
+	cfg  *config.Config
 }
 
-func NewSKHandler(repo *repository.SKRepository) *SKHandler {
-	return &SKHandler{repo: repo}
+func NewSKHandler(repo repository.SKRepositoryInterface, cfg *config.Config) *SKHandler {
+	return &SKHandler{repo: repo, cfg: cfg}
 }
 
 func (h *SKHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -22,45 +24,64 @@ func (h *SKHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sk/import", h.handlePostSKImport)
 }
 
+func (h *SKHandler) corsOrigin() string {
+	if h.cfg != nil {
+		return h.cfg.DashboardOrigin
+	}
+	return "*"
+}
+
+func (h *SKHandler) maxBodyBytes() int64 {
+	if h.cfg != nil && h.cfg.MaxBodyBytes > 0 {
+		return h.cfg.MaxBodyBytes
+	}
+	return 1 << 20 // 1 MB default
+}
+
 func (h *SKHandler) handleGetSKList(w http.ResponseWriter, r *http.Request) {
+	setCORSHeader(w, h.corsOrigin())
 	list, err := h.repo.GetSKList(r.Context())
 	if err != nil {
-		writeSKError(w, http.StatusInternalServerError, "Gagal mendapatkan daftar SK: "+err.Error())
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Gagal mendapatkan daftar SK: " + err.Error()})
 		return
 	}
-	writeSKJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, list)
 }
 
 func (h *SKHandler) handleGetSKDetail(w http.ResponseWriter, r *http.Request) {
+	setCORSHeader(w, h.corsOrigin())
 	skNo := r.URL.Query().Get("sk_no")
 	if skNo == "" {
-		writeSKError(w, http.StatusBadRequest, "parameter sk_no dibutuhkan")
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parameter sk_no dibutuhkan"})
 		return
 	}
 
 	detail, err := h.repo.GetSKDetail(r.Context(), skNo)
 	if err != nil {
-		writeSKError(w, http.StatusInternalServerError, "Gagal mendapatkan detail SK: "+err.Error())
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Gagal mendapatkan detail SK: " + err.Error()})
 		return
 	}
 
-	writeSKJSON(w, http.StatusOK, detail)
+	writeJSON(w, http.StatusOK, detail)
 }
 
 func (h *SKHandler) handlePostSKPreview(w http.ResponseWriter, r *http.Request) {
-	var req repository.SKImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeSKError(w, http.StatusBadRequest, "Invalid JSON payload: "+err.Error())
-		return
-	}
+	setCORSHeader(w, h.corsOrigin())
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBodyBytes())
 	defer r.Body.Close()
 
+	var req repository.SKImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON payload: " + err.Error()})
+		return
+	}
+
 	if req.SKNo == "" {
-		writeSKError(w, http.StatusBadRequest, "sk_no tidak boleh kosong")
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "sk_no tidak boleh kosong"})
 		return
 	}
 	if len(req.Rows) == 0 {
-		writeSKError(w, http.StatusBadRequest, "rows tidak boleh kosong")
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "rows tidak boleh kosong"})
 		return
 	}
 
@@ -71,37 +92,29 @@ func (h *SKHandler) handlePostSKPreview(w http.ResponseWriter, r *http.Request) 
 		"rows":        req.Rows,
 	}
 
-	writeSKJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *SKHandler) handlePostSKImport(w http.ResponseWriter, r *http.Request) {
+	setCORSHeader(w, h.corsOrigin())
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBodyBytes())
+	defer r.Body.Close()
+
 	var req repository.SKImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeSKError(w, http.StatusBadRequest, "Invalid JSON payload: "+err.Error())
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON payload: " + err.Error()})
 		return
 	}
-	defer r.Body.Close()
 
 	inserted, err := h.repo.BulkInsertSKBed(r.Context(), req)
 	if err != nil {
-		writeSKError(w, http.StatusInternalServerError, "Gagal import SK: "+err.Error())
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Gagal import SK: " + err.Error()})
 		return
 	}
 
-	writeSKJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"inserted": inserted,
 		"sk_no":    req.SKNo,
 		"message":  "Import berhasil",
 	})
-}
-
-func writeSKError(w http.ResponseWriter, status int, msg string) {
-	writeSKJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeSKJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
 }

@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-
-	_ "github.com/microsoft/go-mssqldb"
 )
 
 type SKImportRequest struct {
@@ -172,6 +170,9 @@ func (r *SKRepository) GetSKList(ctx context.Context) ([]string, error) {
 		}
 		list = append(list, sk)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterasi rows daftar SK gagal: %w", err)
+	}
 	return list, nil
 }
 
@@ -224,6 +225,9 @@ func (r *SKRepository) GetSKDetail(ctx context.Context, skNo string) ([]SKBedRow
 		if kamar.Valid { row.Kamar = kamar.String }
 
 		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterasi rows detail SK gagal: %w", err)
 	}
 	return result, nil
 }

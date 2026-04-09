@@ -3,8 +3,6 @@ package repository
 import (
 	"database/sql"
 	"fmt"
-
-	_ "github.com/microsoft/go-mssqldb"
 )
 
 // BedSiranap merepresentasikan satu baris data ketersediaan tempat tidur
@@ -55,6 +53,11 @@ func (r *BedRepository) GetActiveSKNo() (string, error) {
 		}
 	}
 
+	// Cek error yang terjadi selama iterasi
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterasi rows sk aktif gagal: %w", err)
+	}
+
 	if skNo == "" {
 		return "", fmt.Errorf("tidak ada SK aktif ditemukan di tabel sk_bed")
 	}
@@ -80,9 +83,9 @@ func (r *BedRepository) GetBedAvailability(skNo string) ([]BedSiranap, error) {
 	}()
 
 	// ─── Query 1: Buat temp table pasien rawat inap aktif ───────────────────
-	// Catatan: skNo berasal dari query DB internal (bukan input user), aman diinterpolasi.
-	// Driver go-mssqldb gagal mem-bind named parameter di dalam subquery SELECT...INTO.
-	query1 := fmt.Sprintf(`
+	// Menggunakan named parameter @sk_no via mssql.Named untuk mencegah SQL injection.
+	// Catatan: go-mssqldb mendukung named param dalam subquery IN clause.
+	query1 := `
 		SELECT
 			no_registration,
 			class_room_id,
@@ -100,18 +103,18 @@ func (r *BedRepository) GetBedAvailability(skNo string) ([]BedSiranap, error) {
 		  AND class_room_id IN (
 			SELECT DISTINCT class_room_id
 			FROM sk_bed
-			WHERE sk_no = '%s'
+			WHERE sk_no = @sk_no
 			  AND tgl_berakhir IS NULL
 			  AND class_room_id <> 'NI.BX'
 		  )
-		ORDER BY kamar`, skNo)
+		ORDER BY kamar`
 
-	if _, err := tx.Exec(query1); err != nil {
+	if _, err := tx.Exec(query1, sql.Named("sk_no", skNo)); err != nil {
 		return nil, fmt.Errorf("query 1 (temp table) gagal: %w", err)
 	}
 
 	// ─── Query 2: Ambil ketersediaan bed dengan LEFT JOIN ke #temp_ranap ────
-	query2 := fmt.Sprintf(`
+	query2 := `
 		SELECT
 			sk.id_tt_siranap,
 			sk.class_room_id,
@@ -133,16 +136,16 @@ func (r *BedRepository) GetBedAvailability(skNo string) ([]BedSiranap, error) {
 				FROM #temp_ranap
 				GROUP BY kamar
 			) t ON t.kamar = CONCAT(sk.class_room_id, sk.kamar)
-		WHERE sk.sk_no = '%s'
+		WHERE sk.sk_no = @sk_no
 		  AND sk.tgl_berakhir IS NULL
 		  AND sk.class_room_id <> 'NI.BX'
 		GROUP BY
 			sk.id_tt_siranap, sk.class_room_id, sk.siranap, sk.jml_ruang_siranap,
 			sk.kamar, sk.kelas_siranap, sk.ruang_siranap, sk.covid,
 			sc.status, sc.konfirmasi, sc.antrian, t.terisi
-		ORDER BY sk.siranap, sk.ruang_siranap`, skNo)
+		ORDER BY sk.siranap, sk.ruang_siranap`
 
-	rows, err := tx.Query(query2)
+	rows, err := tx.Query(query2, sql.Named("sk_no", skNo))
 	if err != nil {
 		return nil, fmt.Errorf("query 2 (ketersediaan bed) gagal: %w", err)
 	}

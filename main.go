@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -28,7 +30,10 @@ func (s *sirsService) Execute(args []string, r <-chan svc.ChangeRequest, changes
 	const cmdsAccepted = svc.AcceptStop | svc.AcceptShutdown
 	changes <- svc.Status{State: svc.StartPending}
 
-	go run()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go run(ctx)
 
 	changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
 
@@ -36,6 +41,7 @@ func (s *sirsService) Execute(args []string, r <-chan svc.ChangeRequest, changes
 		c := <-r
 		switch c.Cmd {
 		case svc.Stop, svc.Shutdown:
+			cancel()
 			changes <- svc.Status{State: svc.StopPending}
 			return false, 0
 		}
@@ -53,7 +59,11 @@ func main() {
 	if isInteractive {
 		// Mode development — jalankan langsung tanpa Windows Service wrapper
 		log.Println("Mode interaktif — menjalankan sebagai console app")
-		run()
+
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+
+		run(ctx)
 	} else {
 		// Mode produksi — jalankan sebagai Windows Service
 		if err := debug.Run("sirs-online", &sirsService{}); err != nil {
@@ -62,8 +72,8 @@ func main() {
 	}
 }
 
-// run berisi logika utama aplikasi
-func run() {
+// run berisi logika utama aplikasi. Menerima context untuk graceful shutdown.
+func run(ctx context.Context) {
 	// 1. Load konfigurasi
 	cfg := config.Load()
 
@@ -102,11 +112,11 @@ func run() {
 	// 4. Inisialisasi repository & dispatcher
 	repo := repository.New(db)
 	skRepo := repository.NewSKRepository(db)
-	bedsRepo := repository.NewBedsRepository(db)
+	bedsRepo := repository.NewBedsRepository(db, cfg.OrgUnitCode)
 	dispatcher := worker.NewDispatcher(repo, cfg)
 
-	// 5. Mulai Ticker (berjalan di background)
-	go dispatcher.Start()
+	// 5. Mulai Ticker (berjalan di background, dihentikan saat ctx selesai)
+	go dispatcher.StartWithContext(ctx)
 
 	// 6. Setup HTTP Server
 	mux := http.NewServeMux()
@@ -115,34 +125,17 @@ func run() {
 	apiHandler := handler.New(cfg, dispatcher)
 	apiHandler.RegisterRoutes(mux)
 
-	skHandler := handler.NewSKHandler(skRepo)
+	skHandler := handler.NewSKHandler(skRepo, cfg)
 	skHandler.RegisterRoutes(mux)
 
-	bedsHandler := handler.NewBedsHandler(bedsRepo)
+	bedsHandler := handler.NewBedsHandler(bedsRepo, cfg)
 	bedsHandler.RegisterRoutes(mux)
 
-	// Endpoint proxy Kemenkes — Tab 2: GET referensi TT dari Kemenkes
-	mux.HandleFunc("GET /api/proxy/referensi", makeProxyHandler(cfg, "GET",
-		cfg.APIURL+"/Referensi/tempat_tidur"))
+	// Endpoint proxy Kemenkes (dikelola oleh ProxyHandler)
+	proxyHandler := handler.NewProxyHandler(cfg)
+	proxyHandler.RegisterRoutes(mux)
 
-	// Endpoint proxy Kemenkes — Tab 3: GET data Fasyankes yang sudah diinputkan RS
-	mux.HandleFunc("GET /api/proxy/fasyankes", makeProxyHandler(cfg, "GET",
-		cfg.APIURL+"/Fasyankes"))
-
-	// Endpoint proxy Kemenkes — Tab 4: POST tempat tidur baru
-	mux.HandleFunc("POST /api/kemenkes/tempat-tidur", makeKemenkesForwardHandler(cfg, "POST",
-		cfg.APIURL+"/Fasyankes"))
-
-	// Endpoint proxy Kemenkes — Tab 4: PUT tempat tidur (update manual)
-	mux.HandleFunc("PUT /api/kemenkes/tempat-tidur/{id_tt}", func(w http.ResponseWriter, r *http.Request) {
-		makeKemenkesForwardHandler(cfg, "PUT", cfg.APIURL+`/Fasyankes`)(w, r)
-	})
-
-	// Endpoint Eksekutif — Dashboard Khusus (Data total per bangsal)
-	mux.HandleFunc("GET /api/beds/executive", makeProxyHandler(cfg, "GET",
-		cfg.ExecutiveAPIURL))
-
-	addr := ":" + strconv.Itoa(cfg.AppPort)
+	addr := fmt.Sprintf(":%d", cfg.AppPort)
 	logger.Info("Dashboard berjalan di http://localhost%s", addr)
 
 	srv := &http.Server{
@@ -153,96 +146,30 @@ func run() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Error("HTTP server error: %v", err)
-		log.Fatal(err)
-	}
-}
+	// 7. Jalankan HTTP server di goroutine, shutdown gracefully saat ctx selesai
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- srv.ListenAndServe()
+	}()
 
-// ─── Proxy Helpers ────────────────────────────────────────────────────────────
+	select {
+	case <-ctx.Done():
+		logger.Info("Shutdown signal diterima — menghentikan server...")
+		dispatcher.Stop()
 
-// makeProxyHandler membuat handler GET read-only ke Kemenkes (untuk Tab 2 & 3).
-// Menggunakan shared client dengan TLS skip verify dan logging diagnostik.
-func makeProxyHandler(cfg *config.Config, method, url string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		client := worker.NewKemenkesClient(cfg.TLSSkipVerify)
-		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
 
-		logger.Info("[PROXY] %s %s", method, url)
-
-		resp, err := client.R().
-			SetHeader("X-rs-id", cfg.APIRsID).
-			SetHeader("X-pass", cfg.APIPass).
-			SetHeader("X-Timestamp", timestamp).
-			Execute(method, url)
-
-		if err != nil {
-			logger.Error("[PROXY] Gagal %s %s: %v", method, url, err)
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "Gagal menghubungi API Kemenkes: " + err.Error(),
-			})
-			return
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("HTTP shutdown error: %v", err)
+		} else {
+			logger.Info("Server berhenti dengan baik.")
 		}
 
-		logger.Info("[PROXY] %s %s → status %d (%d bytes)",
-			method, url, resp.StatusCode(), len(resp.Body()))
-
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.WriteHeader(resp.StatusCode())
-		_, _ = w.Write(resp.Body())
-	}
-}
-
-// makeKemenkesForwardHandler meneruskan request POST/PUT dari dashboard ke Kemenkes.
-// Menggunakan shared client dengan TLS skip verify dan logging diagnostik.
-func makeKemenkesForwardHandler(cfg *config.Config, method, url string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "Body tidak valid: " + err.Error(),
-			})
-			return
+	case err := <-serverErr:
+		if err != nil && err != http.ErrServerClosed {
+			logger.Error("HTTP server error: %v", err)
+			log.Fatal(err)
 		}
-		defer func() { _ = r.Body.Close() }()
-
-		client := worker.NewKemenkesClient(cfg.TLSSkipVerify)
-		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
-
-		logger.Info("[PROXY] %s %s", method, url)
-
-		resp, err := client.R().
-			SetHeader("X-rs-id", cfg.APIRsID).
-			SetHeader("X-pass", cfg.APIPass).
-			SetHeader("X-Timestamp", timestamp).
-			SetHeader("Content-Type", "application/json").
-			SetBody(body).
-			Execute(method, url)
-
-		if err != nil {
-			logger.Error("[PROXY] Gagal %s %s: %v", method, url, err)
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "Gagal menghubungi API Kemenkes: " + err.Error(),
-			})
-			return
-		}
-
-		logger.Info("[PROXY] %s %s → status %d (%d bytes)",
-			method, url, resp.StatusCode(), len(resp.Body()))
-
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.WriteHeader(resp.StatusCode())
-		_, _ = w.Write(resp.Body())
 	}
 }
