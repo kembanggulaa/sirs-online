@@ -36,12 +36,6 @@ func NewDispatcher(repo repository.BedRepositoryInterface, cfg *config.Config) *
 	return d
 }
 
-// Start memulai Ticker otomatis setiap interval yang dikonfigurasi.
-// Harus dipanggil di goroutine terpisah.
-// Deprecated: gunakan StartWithContext untuk dukungan graceful shutdown.
-func (d *Dispatcher) Start() {
-	d.StartWithContext(context.Background())
-}
 
 // StartWithContext memulai Ticker otomatis dan menghentikannya saat ctx selesai.
 // Harus dipanggil di goroutine terpisah.

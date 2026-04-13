@@ -16,11 +16,12 @@ type DatabaseConfig struct {
 	Name string
 }
 
-// APIConfig menyimpan konfigurasi API Kemenkes
+// APIConfig menyimpan konfigurasi API Kemenkes dan endpoint eksternal lainnya
 type APIConfig struct {
-	URL  string
-	RsID string
-	Pass string
+	URL          string
+	RsID         string
+	Pass         string
+	ExecutiveURL string // URL API Dashboard Eksekutif
 }
 
 // OperationalConfig menyimpan konfigurasi operasional server dan worker
@@ -29,7 +30,6 @@ type OperationalConfig struct {
 	SyncIntervalHours int
 	RetryMax          int
 	LogFile           string
-	ExecutiveAPIURL   string
 	TLSSkipVerify     bool
 	OrgUnitCode       string
 }
@@ -48,7 +48,9 @@ type Config struct {
 	Security    SecurityConfig
 }
 
-// Load membaca konfigurasi dari file .env menggunakan Viper
+// Load membaca konfigurasi dari file .env menggunakan Viper.
+// Fungsi ini menggunakan global state Viper dan tidak aman untuk dipanggil secara concurrent.
+// Panggil sekali saja di awal startup sebelum goroutine lain dimulai.
 func Load() *Config {
 	viper.SetConfigFile(".env")
 	viper.SetConfigType("env")
@@ -70,16 +72,16 @@ func Load() *Config {
 			Name: viper.GetString("DB_NAME"),
 		},
 		API: APIConfig{
-			URL:  viper.GetString("API_URL"),
-			RsID: viper.GetString("API_RS_ID"),
-			Pass: viper.GetString("API_PASS"),
+			URL:          viper.GetString("API_URL"),
+			RsID:         viper.GetString("API_RS_ID"),
+			Pass:         viper.GetString("API_PASS"),
+			ExecutiveURL: viper.GetString("EXECUTIVE_API_URL"),
 		},
 		Operational: OperationalConfig{
 			AppPort:           viper.GetInt("APP_PORT"),
 			SyncIntervalHours: viper.GetInt("SYNC_INTERVAL_HOURS"),
 			RetryMax:          viper.GetInt("RETRY_MAX"),
 			LogFile:           viper.GetString("LOG_FILE"),
-			ExecutiveAPIURL:   viper.GetString("EXECUTIVE_API_URL"),
 			TLSSkipVerify:     viper.GetBool("TLS_SKIP_VERIFY"),
 			OrgUnitCode:       viper.GetString("ORG_UNIT_CODE"),
 		},

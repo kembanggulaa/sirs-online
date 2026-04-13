@@ -42,7 +42,7 @@ func (h *ProxyHandler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Dashboard Eksekutif
 	mux.HandleFunc("GET /api/beds/executive", h.makeProxyHandler("GET",
-		h.cfg.Operational.ExecutiveAPIURL))
+		h.cfg.API.ExecutiveURL))
 }
 
 // makeProxyHandler membuat handler GET read-only ke Kemenkes (untuk Tab 2 & 3).
