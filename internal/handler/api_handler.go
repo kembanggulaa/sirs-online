@@ -35,7 +35,7 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 // handleGetBeds — GET /api/beds
 // Mengembalikan data ketersediaan bed in-memory sebagai JSON
 func (h *APIHandler) handleGetBeds(w http.ResponseWriter, r *http.Request) {
-	setCORSHeader(w, h.cfg.DashboardOrigin)
+	setCORSHeader(w, h.cfg.Security.DashboardOrigin)
 	beds := worker.GetBeds()
 	writeJSON(w, http.StatusOK, beds)
 }
@@ -43,8 +43,8 @@ func (h *APIHandler) handleGetBeds(w http.ResponseWriter, r *http.Request) {
 // handleGetLogs — GET /api/logs
 // Mengembalikan 200 baris terakhir dari file log
 func (h *APIHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) {
-	setCORSHeader(w, h.cfg.DashboardOrigin)
-	lines, err := logger.ReadLast(h.cfg.LogFile, 200)
+	setCORSHeader(w, h.cfg.Security.DashboardOrigin)
+	lines, err := logger.ReadLast(h.cfg.Operational.LogFile, 200)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "Gagal membaca file log: " + err.Error(),
@@ -59,8 +59,8 @@ func (h *APIHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 // handlePostSync — POST /api/sync
 // Memicu sinkronisasi manual dari dashboard
 func (h *APIHandler) handlePostSync(w http.ResponseWriter, r *http.Request) {
-	setCORSHeader(w, h.cfg.DashboardOrigin)
-	maxBytes := h.cfg.MaxBodyBytes
+	setCORSHeader(w, h.cfg.Security.DashboardOrigin)
+	maxBytes := h.cfg.Security.MaxBodyBytes
 	if maxBytes <= 0 {
 		maxBytes = 1 << 20 // 1 MB default
 	}
@@ -84,7 +84,7 @@ func (h *APIHandler) handlePostSync(w http.ResponseWriter, r *http.Request) {
 // handleWorkerStatus — GET /api/worker/status
 // Mengembalikan status worker: Running atau Idle
 func (h *APIHandler) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
-	setCORSHeader(w, h.cfg.DashboardOrigin)
+	setCORSHeader(w, h.cfg.Security.DashboardOrigin)
 	status := "Idle"
 	if h.dispatcher.IsRunning() {
 		status = "Running"
@@ -97,7 +97,7 @@ func (h *APIHandler) handleWorkerStatus(w http.ResponseWriter, r *http.Request) 
 // handleSKActive — GET /api/sk-active
 // Mengembalikan sk_no aktif yang terdeteksi dari DB
 func (h *APIHandler) handleSKActive(w http.ResponseWriter, r *http.Request) {
-	setCORSHeader(w, h.cfg.DashboardOrigin)
+	setCORSHeader(w, h.cfg.Security.DashboardOrigin)
 	skNo := worker.GetActiveSKNoCurrent()
 	writeJSON(w, http.StatusOK, map[string]string{
 		"sk_no": skNo,
@@ -107,7 +107,7 @@ func (h *APIHandler) handleSKActive(w http.ResponseWriter, r *http.Request) {
 // handleHealthz — GET /api/healthz
 // Health check endpoint untuk monitoring (Phase 5 task pulled forward)
 func (h *APIHandler) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	setCORSHeader(w, h.cfg.DashboardOrigin)
+	setCORSHeader(w, h.cfg.Security.DashboardOrigin)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "ok",
 	})

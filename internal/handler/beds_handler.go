@@ -26,14 +26,14 @@ func (h *BedsHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *BedsHandler) corsOrigin() string {
 	if h.cfg != nil {
-		return h.cfg.DashboardOrigin
+		return h.cfg.Security.DashboardOrigin
 	}
 	return "*"
 }
 
 func (h *BedsHandler) maxBodyBytes() int64 {
-	if h.cfg != nil && h.cfg.MaxBodyBytes > 0 {
-		return h.cfg.MaxBodyBytes
+	if h.cfg != nil && h.cfg.Security.MaxBodyBytes > 0 {
+		return h.cfg.Security.MaxBodyBytes
 	}
 	return 1 << 20 // 1 MB default
 }

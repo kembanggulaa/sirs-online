@@ -78,19 +78,19 @@ func run(ctx context.Context) {
 	cfg := config.Load()
 
 	// 2. Init logger
-	if err := logger.Init(cfg.LogFile); err != nil {
+	if err := logger.Init(cfg.Operational.LogFile); err != nil {
 		log.Fatalf("Gagal inisialisasi logger: %v", err)
 	}
 	defer logger.Close()
 
 	logger.Info("=== SIRS Online Bridging V3 start ===")
 	logger.Info("PORT=%d | INTERVAL=%dj | LOG=%s | TLS_SKIP_VERIFY=%v",
-		cfg.AppPort, cfg.SyncIntervalHours, cfg.LogFile, cfg.TLSSkipVerify)
+		cfg.Operational.AppPort, cfg.Operational.SyncIntervalHours, cfg.Operational.LogFile, cfg.Operational.TLSSkipVerify)
 
 	// 3. Koneksi ke SQL Server SIMRS
 	dsn := fmt.Sprintf(
 		"server=%s;port=%d;user id=%s;password=%s;database=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPass, cfg.DBName,
+		cfg.Database.Host, cfg.Database.Port, cfg.Database.User, cfg.Database.Pass, cfg.Database.Name,
 	)
 	db, err := sql.Open("mssql", dsn)
 	if err != nil {
@@ -107,12 +107,12 @@ func run(ctx context.Context) {
 		logger.Error("Tidak bisa terhubung ke SQL Server: %v", err)
 		log.Fatalf("DB ping error: %v", err)
 	}
-	logger.Info("Koneksi SQL Server berhasil: %s:%d/%s", cfg.DBHost, cfg.DBPort, cfg.DBName)
+	logger.Info("Koneksi SQL Server berhasil: %s:%d/%s", cfg.Database.Host, cfg.Database.Port, cfg.Database.Name)
 
 	// 4. Inisialisasi repository & dispatcher
 	repo := repository.New(db)
 	skRepo := repository.NewSKRepository(db)
-	bedsRepo := repository.NewBedsRepository(db, cfg.OrgUnitCode)
+	bedsRepo := repository.NewBedsRepository(db, cfg.Operational.OrgUnitCode)
 	dispatcher := worker.NewDispatcher(repo, cfg)
 
 	// 5. Mulai Ticker (berjalan di background, dihentikan saat ctx selesai)
@@ -135,7 +135,7 @@ func run(ctx context.Context) {
 	proxyHandler := handler.NewProxyHandler(cfg)
 	proxyHandler.RegisterRoutes(mux)
 
-	addr := fmt.Sprintf(":%d", cfg.AppPort)
+	addr := fmt.Sprintf(":%d", cfg.Operational.AppPort)
 	logger.Info("Dashboard berjalan di http://localhost%s", addr)
 
 	srv := &http.Server{

@@ -2,7 +2,8 @@
 // Berguna untuk debug kenapa Tab Referensi dan Fasyankes kosong.
 //
 // Cara pakai (dari root proyek):
-//   go run test/get_kemenkes/main.go
+//
+//	go run test/get_kemenkes/main.go
 package main
 
 import (
@@ -27,8 +28,8 @@ func main() {
 	}
 
 	apiURL := viper.GetString("API_URL")
-	rsID   := viper.GetString("API_RS_ID")
-	pass   := viper.GetString("API_PASS")
+	rsID := viper.GetString("API_RS_ID")
+	pass := viper.GetString("API_PASS")
 
 	if apiURL == "" {
 		fmt.Println("[ERROR] API_URL tidak ditemukan di .env")
@@ -46,7 +47,7 @@ func main() {
 		url   string
 	}{
 		{"GET /Referensi/tempat_tidur", apiURL + "/Referensi/tempat_tidur"},
-		{"GET /Fasyankes",              apiURL + "/Fasyankes"},
+		{"GET /Fasyankes", apiURL + "/Fasyankes"},
 	}
 
 	for _, ep := range endpoints {
@@ -56,8 +57,8 @@ func main() {
 		fmt.Println(strings.Repeat("─", 65))
 
 		resp, err := client.R().
-			SetHeader("X-rs-id",     rsID).
-			SetHeader("X-pass",      pass).
+			SetHeader("X-rs-id", rsID).
+			SetHeader("X-pass", pass).
 			SetHeader("X-Timestamp", timestamp).
 			Get(ep.url)
 
@@ -69,7 +70,7 @@ func main() {
 		body := resp.Body()
 		var data map[string]interface{}
 		json.Unmarshal(body, &data)
-		
+
 		fmt.Printf("  Status  : %d\n", resp.StatusCode())
 		for k, v := range data {
 			fmt.Printf("  Key: %s\n", k)

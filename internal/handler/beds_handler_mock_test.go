@@ -99,7 +99,7 @@ func TestBedsHandler_UpsertBeds_Integration(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Errorf("status got %d; want %d", w.Code, tt.wantStatus)
 			}
-			
+
 			// jika success pastikan format hasil sesuai dengan respons JSON
 			if tt.wantStatus == http.StatusOK {
 				var res repository.UpsertResult

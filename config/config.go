@@ -7,32 +7,45 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config menyimpan semua konfigurasi aplikasi dari .env
-type Config struct {
-	// Database
-	DBHost string
-	DBPort int
-	DBUser string
-	DBPass string
-	DBName string
+// DatabaseConfig menyimpan konfigurasi koneksi ke database
+type DatabaseConfig struct {
+	Host string
+	Port int
+	User string
+	Pass string
+	Name string
+}
 
-	// API RS Online Kemenkes
-	APIURL   string
-	APIRsID  string
-	APIPass  string
+// APIConfig menyimpan konfigurasi API Kemenkes
+type APIConfig struct {
+	URL  string
+	RsID string
+	Pass string
+}
 
-	// Operasional
-	AppPort            int
-	SyncIntervalHours  int
-	RetryMax           int
-	LogFile            string
-	ExecutiveAPIURL    string
-	TLSSkipVerify      bool
-	OrgUnitCode        string
+// OperationalConfig menyimpan konfigurasi operasional server dan worker
+type OperationalConfig struct {
+	AppPort           int
+	SyncIntervalHours int
+	RetryMax          int
+	LogFile           string
+	ExecutiveAPIURL   string
+	TLSSkipVerify     bool
+	OrgUnitCode       string
+}
 
-	// Keamanan
+// SecurityConfig menyimpan konfigurasi sistem keamanan seperti CORS dan request body
+type SecurityConfig struct {
 	DashboardOrigin string // asal dashboard untuk header CORS (misal: http://localhost:9271)
 	MaxBodyBytes    int64  // batas ukuran request body POST/PUT (default: 1 MB)
+}
+
+// Config menyimpan semua konfigurasi aplikasi dari .env
+type Config struct {
+	Database    DatabaseConfig
+	API         APIConfig
+	Operational OperationalConfig
+	Security    SecurityConfig
 }
 
 // Load membaca konfigurasi dari file .env menggunakan Viper
@@ -45,26 +58,34 @@ func Load() *Config {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	if err := viper.ReadInConfig(); err != nil {
-		log.Printf("[WARN] Tidak bisa membaca .env: %v — menggunakan environment variable", err)
+		log.Printf("[WARN] Tidak bisa membaca .env: %v \u2014 menggunakan environment variable", err)
 	}
 
 	return &Config{
-		DBHost:            viper.GetString("DB_HOST"),
-		DBPort:            viper.GetInt("DB_PORT"),
-		DBUser:            viper.GetString("DB_USER"),
-		DBPass:            viper.GetString("DB_PASS"),
-		DBName:            viper.GetString("DB_NAME"),
-		APIURL:            viper.GetString("API_URL"),
-		APIRsID:           viper.GetString("API_RS_ID"),
-		APIPass:           viper.GetString("API_PASS"),
-		AppPort:           viper.GetInt("APP_PORT"),
-		SyncIntervalHours: viper.GetInt("SYNC_INTERVAL_HOURS"),
-		RetryMax:          viper.GetInt("RETRY_MAX"),
-		LogFile:           viper.GetString("LOG_FILE"),
-		ExecutiveAPIURL:   viper.GetString("EXECUTIVE_API_URL"),
-		TLSSkipVerify:     viper.GetBool("TLS_SKIP_VERIFY"),
-		OrgUnitCode:       viper.GetString("ORG_UNIT_CODE"),
-		DashboardOrigin:   viper.GetString("DASHBOARD_ORIGIN"),
-		MaxBodyBytes:      viper.GetInt64("MAX_BODY_BYTES"),
+		Database: DatabaseConfig{
+			Host: viper.GetString("DB_HOST"),
+			Port: viper.GetInt("DB_PORT"),
+			User: viper.GetString("DB_USER"),
+			Pass: viper.GetString("DB_PASS"),
+			Name: viper.GetString("DB_NAME"),
+		},
+		API: APIConfig{
+			URL:  viper.GetString("API_URL"),
+			RsID: viper.GetString("API_RS_ID"),
+			Pass: viper.GetString("API_PASS"),
+		},
+		Operational: OperationalConfig{
+			AppPort:           viper.GetInt("APP_PORT"),
+			SyncIntervalHours: viper.GetInt("SYNC_INTERVAL_HOURS"),
+			RetryMax:          viper.GetInt("RETRY_MAX"),
+			LogFile:           viper.GetString("LOG_FILE"),
+			ExecutiveAPIURL:   viper.GetString("EXECUTIVE_API_URL"),
+			TLSSkipVerify:     viper.GetBool("TLS_SKIP_VERIFY"),
+			OrgUnitCode:       viper.GetString("ORG_UNIT_CODE"),
+		},
+		Security: SecurityConfig{
+			DashboardOrigin: viper.GetString("DASHBOARD_ORIGIN"),
+			MaxBodyBytes:    viper.GetInt64("MAX_BODY_BYTES"),
+		},
 	}
 }

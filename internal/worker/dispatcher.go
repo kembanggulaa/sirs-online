@@ -46,7 +46,7 @@ func (d *Dispatcher) Start() {
 // StartWithContext memulai Ticker otomatis dan menghentikannya saat ctx selesai.
 // Harus dipanggil di goroutine terpisah.
 func (d *Dispatcher) StartWithContext(ctx context.Context) {
-	interval := time.Duration(d.cfg.SyncIntervalHours) * time.Hour
+	interval := time.Duration(d.cfg.Operational.SyncIntervalHours) * time.Hour
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -65,7 +65,6 @@ func (d *Dispatcher) StartWithContext(ctx context.Context) {
 		}
 	}
 }
-
 
 // TriggerManual mengirim Job secara manual (dari tombol Sync Now di dashboard).
 // Mengembalikan false jika worker sedang berjalan (skip).

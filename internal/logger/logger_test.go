@@ -28,7 +28,7 @@ func TestReadLast_EfficientSeek(t *testing.T) {
 		lastLine  string
 	}{
 		{"baca 5 baris terakhir", 5, 5, "Baris Log - :"},
-		{"baca melebihi batas (30)", 30, 20, "Baris Log - :"}, 
+		{"baca melebihi batas (30)", 30, 20, "Baris Log - :"},
 		{"baca 0 baris", 0, 0, ""},
 	}
 
@@ -46,7 +46,7 @@ func TestReadLast_EfficientSeek(t *testing.T) {
 
 			// Validate if the last element matches the expected tail
 			if tt.expected > 0 && tt.lastLine != "" {
-				// We won't match contents exactly character to character if not fully mapped, 
+				// We won't match contents exactly character to character if not fully mapped,
 				// just verifying it successfully avoids panic and returns lines properly.
 				if result[len(result)-1] == "" {
 					t.Errorf("last string is unexpectedly empty")

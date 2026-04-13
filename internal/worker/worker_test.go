@@ -18,8 +18,8 @@ func init() {
 }
 
 type MockBedRepository struct {
-	GetActiveSKNoFunc       func() (string, error)
-	GetBedAvailabilityFunc  func(skNo string) ([]repository.BedSiranap, error)
+	GetActiveSKNoFunc      func() (string, error)
+	GetBedAvailabilityFunc func(skNo string) ([]repository.BedSiranap, error)
 }
 
 func (m *MockBedRepository) GetActiveSKNo() (string, error) {
@@ -49,7 +49,7 @@ func TestProcessJob_Success(t *testing.T) {
 		if r.Method == "PUT" && r.URL.Path == "/Fasyankes" {
 			// Mocking sinkronisasi / update
 			putCalled++
-			
+
 			// Validate payload received and token
 			if r.Header.Get("X-rs-id") != "RS123" {
 				t.Errorf("expected X-rs-id to be RS123")
@@ -88,11 +88,15 @@ func TestProcessJob_Success(t *testing.T) {
 
 	// 3. Konfigurasi
 	cfg := &config.Config{
-		APIURL:        ts.URL,
-		APIRsID:       "RS123",
-		APIPass:       "pass123",
-		TLSSkipVerify: true,
-		RetryMax:      0, // prevent retries taking too long in test
+		API: config.APIConfig{
+			URL:  ts.URL,
+			RsID: "RS123",
+			Pass: "pass123",
+		},
+		Operational: config.OperationalConfig{
+			TLSSkipVerify: true,
+			RetryMax:      0, // prevent retries taking too long in test
+		},
 	}
 
 	job := Job{
@@ -128,7 +132,7 @@ func TestDispatcher_TriggerManual(t *testing.T) {
 			return []repository.BedSiranap{}, nil
 		},
 	}
-	cfg := &config.Config{APIURL: "http://example.com"}
+	cfg := &config.Config{API: config.APIConfig{URL: "http://example.com"}}
 
 	dispatcher := NewDispatcher(mockRepo, cfg)
 	defer dispatcher.Stop()
@@ -145,6 +149,6 @@ func TestDispatcher_TriggerManual(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Check running state
-	// Not predictably checking running status unless we block processJob, 
+	// Not predictably checking running status unless we block processJob,
 	// here we just aim to pass execution without panics.
 }

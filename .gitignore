@@ -24,3 +24,11 @@ go.work
 # Logs
 logs/
 *.log
+
+# AI/Journey Documentation & Architecture Planning
+architecture*.md
+web/static/architecture*.md
+comprehensive_review*.md
+remidiation-plan*.md
+review-test*.md
+post-codebase-review*.md

@@ -26,38 +26,38 @@ func NewProxyHandler(cfg *config.Config) *ProxyHandler {
 func (h *ProxyHandler) RegisterRoutes(mux *http.ServeMux) {
 	// Tab 2: GET referensi TT dari Kemenkes
 	mux.HandleFunc("GET /api/proxy/referensi", h.makeProxyHandler("GET",
-		h.cfg.APIURL+"/Referensi/tempat_tidur"))
+		h.cfg.API.URL+"/Referensi/tempat_tidur"))
 
 	// Tab 3: GET data Fasyankes yang sudah diinputkan RS
 	mux.HandleFunc("GET /api/proxy/fasyankes", h.makeProxyHandler("GET",
-		h.cfg.APIURL+"/Fasyankes"))
+		h.cfg.API.URL+"/Fasyankes"))
 
 	// Tab 4: POST tempat tidur baru
 	mux.HandleFunc("POST /api/kemenkes/tempat-tidur", h.makeForwardHandler("POST",
-		h.cfg.APIURL+"/Fasyankes"))
+		h.cfg.API.URL+"/Fasyankes"))
 
 	// Tab 4: PUT tempat tidur (update manual)
 	mux.HandleFunc("PUT /api/kemenkes/tempat-tidur/{id_tt}", h.makeForwardHandler("PUT",
-		h.cfg.APIURL+"/Fasyankes"))
+		h.cfg.API.URL+"/Fasyankes"))
 
 	// Dashboard Eksekutif
 	mux.HandleFunc("GET /api/beds/executive", h.makeProxyHandler("GET",
-		h.cfg.ExecutiveAPIURL))
+		h.cfg.Operational.ExecutiveAPIURL))
 }
 
 // makeProxyHandler membuat handler GET read-only ke Kemenkes (untuk Tab 2 & 3).
 // Menggunakan shared client dengan TLS skip verify dan logging diagnostik.
 func (h *ProxyHandler) makeProxyHandler(method, url string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeader(w, h.cfg.DashboardOrigin)
-		client := worker.NewKemenkesClient(h.cfg.TLSSkipVerify)
+		setCORSHeader(w, h.cfg.Security.DashboardOrigin)
+		client := worker.NewKemenkesClient(h.cfg.Operational.TLSSkipVerify)
 		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
 
 		logger.Info("[PROXY] %s %s", method, url)
 
 		resp, err := client.R().
-			SetHeader("X-rs-id", h.cfg.APIRsID).
-			SetHeader("X-pass", h.cfg.APIPass).
+			SetHeader("X-rs-id", h.cfg.API.RsID).
+			SetHeader("X-pass", h.cfg.API.Pass).
 			SetHeader("X-Timestamp", timestamp).
 			Execute(method, url)
 
@@ -81,9 +81,9 @@ func (h *ProxyHandler) makeProxyHandler(method, url string) http.HandlerFunc {
 // makeForwardHandler meneruskan request POST/PUT dari dashboard ke Kemenkes.
 func (h *ProxyHandler) makeForwardHandler(method, url string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeader(w, h.cfg.DashboardOrigin)
+		setCORSHeader(w, h.cfg.Security.DashboardOrigin)
 
-		maxBytes := h.cfg.MaxBodyBytes
+		maxBytes := h.cfg.Security.MaxBodyBytes
 		if maxBytes <= 0 {
 			maxBytes = 1 << 20 // 1 MB
 		}
@@ -98,14 +98,14 @@ func (h *ProxyHandler) makeForwardHandler(method, url string) http.HandlerFunc {
 			return
 		}
 
-		client := worker.NewKemenkesClient(h.cfg.TLSSkipVerify)
+		client := worker.NewKemenkesClient(h.cfg.Operational.TLSSkipVerify)
 		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
 
 		logger.Info("[PROXY] %s %s", method, url)
 
 		resp, err := client.R().
-			SetHeader("X-rs-id", h.cfg.APIRsID).
-			SetHeader("X-pass", h.cfg.APIPass).
+			SetHeader("X-rs-id", h.cfg.API.RsID).
+			SetHeader("X-pass", h.cfg.API.Pass).
 			SetHeader("X-Timestamp", timestamp).
 			SetHeader("Content-Type", "application/json").
 			SetBody(body).

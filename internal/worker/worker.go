@@ -66,7 +66,7 @@ func processJob(job Job) {
 	SetBeds(beds)
 
 	// ─── Step 3: Init HTTP client (shared untuk pre-fetch & PUT) ─────────────
-	client := NewKemenkesClient(cfg.TLSSkipVerify)
+	client := NewKemenkesClient(cfg.Operational.TLSSkipVerify)
 
 	// ─── Step 4: Pre-fetch mapping id_t_tt dari Kemenkes ─────────────────────
 	// Key: "{id_tt}|{ruang}" → Value: id_t_tt (ID unik record di server Kemenkes)
@@ -79,7 +79,7 @@ func processJob(job Job) {
 	}
 
 	// ─── Step 5: Kirim PUT ke API Kemenkes per ruangan ───────────────────────
-	putURL := fmt.Sprintf("%s/Fasyankes", cfg.APIURL)
+	putURL := fmt.Sprintf("%s/Fasyankes", cfg.API.URL)
 
 	for _, bed := range beds {
 		// Lookup id_t_tt dari mapping pre-fetch
@@ -110,10 +110,10 @@ func processJob(job Job) {
 		}
 
 		success := false
-		for attempt := 1; attempt <= cfg.RetryMax+1; attempt++ {
+		for attempt := 1; attempt <= cfg.Operational.RetryMax+1; attempt++ {
 			resp, err := client.R().
-				SetHeader("X-rs-id", cfg.APIRsID).
-				SetHeader("X-pass", cfg.APIPass).
+				SetHeader("X-rs-id", cfg.API.RsID).
+				SetHeader("X-pass", cfg.API.Pass).
 				SetHeader("X-Timestamp", timestamp).
 				SetHeader("Content-Type", "application/json").
 				SetBody(body).
@@ -134,16 +134,16 @@ func processJob(job Job) {
 				respBody = truncateStr(string(resp.Body()), 300)
 			}
 			logger.Warn("[RETRY %d/%d] Ruang %s — url: %s, status: %d, body: %s, error: %v",
-				attempt, cfg.RetryMax+1, bed.Siranap, putURL, statusCode, respBody, err)
+				attempt, cfg.Operational.RetryMax+1, bed.Siranap, putURL, statusCode, respBody, err)
 
-			if attempt < cfg.RetryMax+1 {
+			if attempt < cfg.Operational.RetryMax+1 {
 				time.Sleep(5 * time.Second)
 			}
 		}
 
 		if !success {
 			logger.Error("[FAILED] Ruang %s (id_tt=%s, id_t_tt=%s) gagal diupdate setelah %d percobaan",
-				bed.Siranap, bed.IDTTSiranap, idTtt, cfg.RetryMax+1)
+				bed.Siranap, bed.IDTTSiranap, idTtt, cfg.Operational.RetryMax+1)
 		}
 	}
 
@@ -156,14 +156,14 @@ func processJob(job Job) {
 // key "{id_tt}|{ruang}" → id_t_tt.
 // id_t_tt adalah ID unik record di server Kemenkes yang wajib disertakan saat PUT.
 func fetchFasyankesMapping(client *resty.Client, cfg *config.Config) (map[string]string, error) {
-	url := fmt.Sprintf("%s/Fasyankes", cfg.APIURL)
+	url := fmt.Sprintf("%s/Fasyankes", cfg.API.URL)
 	timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
 
 	logger.Info("[PRE-FETCH] GET %s untuk mapping id_t_tt", url)
 
 	resp, err := client.R().
-		SetHeader("X-rs-id", cfg.APIRsID).
-		SetHeader("X-pass", cfg.APIPass).
+		SetHeader("X-rs-id", cfg.API.RsID).
+		SetHeader("X-pass", cfg.API.Pass).
 		SetHeader("X-Timestamp", timestamp).
 		Get(url)
 

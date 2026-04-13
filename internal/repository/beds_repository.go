@@ -50,7 +50,7 @@ type BedsRepository struct {
 }
 
 // NewBedsRepository membuat BedsRepository baru.
-// orgUnitCode diambil dari config.OrgUnitCode agar tidak hardcode di repository.
+// orgUnitCode diambil dari config.Operational.OrgUnitCode agar tidak hardcode di repository.
 func NewBedsRepository(db *sql.DB, orgUnitCode string) *BedsRepository {
 	return &BedsRepository{db: db, orgUnitCode: orgUnitCode}
 }

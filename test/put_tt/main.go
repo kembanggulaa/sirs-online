@@ -58,7 +58,7 @@ func main() {
 
 	// ─── 3. Bangun URL & body ─────────────────────────────────────────────────
 	// URL sama persis dengan yang digunakan worker.go:
-	// cfg.APIURL + "/Fasyankes\"  → id_tt dikirim di body, bukan di path URL
+	// cfg.API.URL + "/Fasyankes\"  → id_tt dikirim di body, bukan di path URL
 	putURL := apiURL + `/Fasyankes\`
 
 	body := map[string]string{
