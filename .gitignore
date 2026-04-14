@@ -1,6 +1,9 @@
 # Binaries for programs and plugins
 *.exe
 *.exe~
+tmp_*.exe
+*-test.exe
+*_test.exe
 *.dll
 *.so
 *.dylib
@@ -10,6 +13,12 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# Test & build artifacts
+*.bak
+*_summary.txt
+test_out*.txt
+coverage*.txt
 
 # Go workspace file
 go.work
