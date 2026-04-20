@@ -82,7 +82,7 @@ func (r *BedsRepository) GetDistinctClassRooms(ctx context.Context) ([]string, e
 
 // GetKamarByClassRoom mengambil daftar kamar berdasarkan class_room_id dari sk_bed.
 func (r *BedsRepository) GetKamarByClassRoom(ctx context.Context, classRoomID string) ([]string, error) {
-	query := `SELECT DISTINCT kamar FROM sk_bed WITH (NOLOCK) WHERE class_room_id = @p1 AND tgl_berakhir IS NULL ORDER BY kamar`
+	query := `SELECT DISTINCT kamar FROM sk_bed WITH (NOLOCK) WHERE class_room_id = ? AND tgl_berakhir IS NULL ORDER BY kamar`
 	rows, err := r.db.QueryContext(ctx, query, classRoomID)
 	if err != nil {
 		return nil, fmt.Errorf("gagal query kamar: %w", err)
@@ -121,26 +121,28 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 	var kamarOrder []string
 
 	// 1. Fetch defaults dari sk_bed berdasarkan kamar
-	queryDefaults := `
-		SELECT ISNULL(kamar, ''), id_tt_siranap, covid 
-		FROM sk_bed WITH (NOLOCK)
-		WHERE class_room_id = @p1 AND tgl_berakhir IS NULL
-	`
+	// Gunakan namaruang sebagai fallback grouping key jika kolom kamar kosong/NULL
+	queryDefaults := "SELECT ISNULL(NULLIF(LTRIM(RTRIM(kamar)), ''), ISNULL(namaruang, '')) as kamar_key, id_tt_siranap, covid, ISNULL(kodekelas, ''), ISNULL(namakelas, '') FROM sk_bed WITH (NOLOCK) WHERE class_room_id = ? AND tgl_berakhir IS NULL"
 	rowsDef, err := r.db.QueryContext(ctx, queryDefaults, classRoomID)
+	//fmt.Printf("DEBUG classRoomID: %q\n", classRoomID)
+	//fmt.Printf("DEBUG queryDefaults: %q\n", queryDefaults)
 	if err != nil {
 		return result, fmt.Errorf("gagal query defaults sk_bed: %w", err)
 	}
 	defer rowsDef.Close()
 
 	for rowsDef.Next() {
-		var k, idTT sql.NullString
+		var k, idTT, kodeKelas, namaKelas sql.NullString
 		var cov sql.NullInt64
-		if err := rowsDef.Scan(&k, &idTT, &cov); err != nil {
+		if err := rowsDef.Scan(&k, &idTT, &cov, &kodeKelas, &namaKelas); err != nil {
 			return result, fmt.Errorf("gagal scan defaults sk_bed: %w", err)
 		}
 		kName := k.String
 		if _, exists := kamarDefaults[kName]; !exists {
-			kamarDefaults[kName] = map[string]string{"id_tt_siranap": "", "covid": "0"}
+			kamarDefaults[kName] = map[string]string{
+				"id_tt_siranap": "", "covid": "0",
+				"id_kelas": "", "nm_kelas": "",
+			}
 
 			// Populate initial kamarsMap so the user immediately sees all kamars defined in sk_bed
 			kamarsMap[kName] = &BedsKamarGroup{
@@ -159,19 +161,21 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 			kamarDefaults[kName]["covid"] = strCov
 			kamarsMap[kName].Defaults["covid"] = strCov
 		}
+		if kodeKelas.Valid && kodeKelas.String != "" {
+			kamarDefaults[kName]["id_kelas"] = kodeKelas.String
+			kamarsMap[kName].Defaults["id_kelas"] = kodeKelas.String
+		}
+		if namaKelas.Valid && namaKelas.String != "" {
+			kamarDefaults[kName]["nm_kelas"] = namaKelas.String
+			kamarsMap[kName].Defaults["nm_kelas"] = namaKelas.String
+		}
 	}
 	if err := rowsDef.Err(); err != nil {
 		return result, fmt.Errorf("iterasi rows defaults gagal: %w", err)
 	}
 
 	// 2. Fetch existing beds (all kamars)
-	queryBeds := `
-		SELECT bed_id, ISNULL(kamar, ''), room_id, id_kelas, nm_kelas, id_perawatan, nm_perawatan, 
-		       id_tt_siranap, id_siranap, deskripsi_siranap, covid
-		FROM beds WITH (NOLOCK)
-		WHERE class_room_id = @p1
-		ORDER BY kamar, bed_id
-	`
+	queryBeds := "SELECT bed_id, ISNULL(kamar, ''), room_id, id_kelas, nm_kelas, id_perawatan, nm_perawatan, id_tt_siranap, id_siranap, deskripsi_siranap, covid FROM beds WITH (NOLOCK) WHERE class_room_id = ? ORDER BY kamar, bed_id"
 	rows, err := r.db.QueryContext(ctx, queryBeds, classRoomID)
 	if err != nil {
 		return result, fmt.Errorf("gagal query beds: %w", err)
@@ -227,23 +231,34 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 			b.Covid = fmt.Sprintf("%d", bCovid.Int64)
 		}
 
-		if _, exists := kamarsMap[kName]; !exists {
-			defs := map[string]string{"id_tt_siranap": "", "covid": "0"}
-			if d, ok := kamarDefaults[kName]; ok {
-				defs = d
-			} else if d, ok := kamarDefaults[""]; ok {
-				defs = d
-			}
+		// Tentukan target group key:
+		// Jika kName (kamar dari beds) sudah ada di kamarsMap, gunakan langsung.
+		// Jika tidak, coba cari apakah kName kosong dan hanya ada satu group di kamarsMap
+		// (fallback: masukkan ke group pertama yang sudah ada dari sk_bed).
+		targetKey := kName
+		if _, exists := kamarsMap[targetKey]; !exists {
+			// Jika kamar kosong dan ada group dari sk_bed, masukkan ke group pertama
+			if targetKey == "" && len(kamarOrder) > 0 {
+				targetKey = kamarOrder[0]
+				b.Kamar = targetKey
+			} else {
+				defs := map[string]string{"id_tt_siranap": "", "covid": "0", "id_kelas": "", "nm_kelas": ""}
+				if d, ok := kamarDefaults[kName]; ok {
+					defs = d
+				} else if d, ok := kamarDefaults[""]; ok {
+					defs = d
+				}
 
-			kamarsMap[kName] = &BedsKamarGroup{
-				Kamar:    kName,
-				Defaults: defs,
-				Rows:     []BedRow{},
+				kamarsMap[targetKey] = &BedsKamarGroup{
+					Kamar:    targetKey,
+					Defaults: defs,
+					Rows:     []BedRow{},
+				}
+				kamarOrder = append(kamarOrder, targetKey)
 			}
-			kamarOrder = append(kamarOrder, kName)
 		}
 
-		kamarsMap[kName].Rows = append(kamarsMap[kName].Rows, b)
+		kamarsMap[targetKey].Rows = append(kamarsMap[targetKey].Rows, b)
 		result.Mode = "edit"
 	}
 	if err := rows.Err(); err != nil {
@@ -282,7 +297,7 @@ func (r *BedsRepository) UpsertBeds(ctx context.Context, req BedsUpsertRequest) 
 	}()
 
 	// Ambil existing bed_id list untuk keseluruhan class_room_id
-	queryExisting := `SELECT bed_id FROM beds WHERE class_room_id = @p1`
+	queryExisting := `SELECT bed_id FROM beds WHERE class_room_id = ?`
 	rows, err := tx.QueryContext(ctx, queryExisting, req.ClassRoomID)
 	if err != nil {
 		return res, fmt.Errorf("gagal query existing beds: %w", err)
@@ -302,20 +317,8 @@ func (r *BedsRepository) UpsertBeds(ctx context.Context, req BedsUpsertRequest) 
 		return res, fmt.Errorf("iterasi rows existing beds gagal: %w", err)
 	}
 
-	insertQuery := `
-		INSERT INTO beds (
-			bed_id, class_room_id, org_unit_code, room_id, 
-			id_kelas, nm_kelas, id_perawatan, nm_perawatan, 
-			id_tt_siranap, id_siranap, deskripsi_siranap, covid, kamar
-		) VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13)
-	`
-	updateQuery := `
-		UPDATE beds SET 
-			org_unit_code = @p1, room_id = @p2, id_kelas = @p3, nm_kelas = @p4, 
-			id_perawatan = @p5, nm_perawatan = @p6, id_tt_siranap = @p7, 
-			id_siranap = @p8, deskripsi_siranap = @p9, covid = @p10, kamar = @p11
-		WHERE bed_id = @p12 AND class_room_id = @p13
-	`
+	insertQuery := `INSERT INTO beds (bed_id, class_room_id, org_unit_code, room_id, id_kelas, nm_kelas, id_perawatan, nm_perawatan, id_tt_siranap, id_siranap, deskripsi_siranap, covid, kamar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	updateQuery := `UPDATE beds SET org_unit_code = ?, room_id = ?, id_kelas = ?, nm_kelas = ?, id_perawatan = ?, nm_perawatan = ?, id_tt_siranap = ?, id_siranap = ?, deskripsi_siranap = ?, covid = ?, kamar = ? WHERE bed_id = ? AND class_room_id = ?`
 
 	stmtInsert, errInsert := tx.PrepareContext(ctx, insertQuery)
 	stmtUpdate, errUpdate := tx.PrepareContext(ctx, updateQuery)
@@ -372,7 +375,7 @@ func (r *BedsRepository) UpsertBeds(ctx context.Context, req BedsUpsertRequest) 
 
 	// Sisa data yang ada di existingMap tapi tidak ada di payload req.Rows berarti telah Dihapus oleh user
 	if len(existingMap) > 0 {
-		deleteQuery := `DELETE FROM beds WHERE bed_id = @p1 AND class_room_id = @p2`
+		deleteQuery := `DELETE FROM beds WHERE bed_id = ? AND class_room_id = ?`
 		stmtDelete, err := tx.PrepareContext(ctx, deleteQuery)
 		if err != nil {
 			return res, fmt.Errorf("gagal menyiapkan query delete: %w", err)
