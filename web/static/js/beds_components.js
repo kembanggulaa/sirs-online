@@ -37,6 +37,8 @@ function bedsManagement() {
       this.loadingData = true;
       this.saveMsg = '';
       this.showTable = false;
+      this.kamarsData = [];
+      this.mode = 'new';
       
       try {
         const url = `/api/beds/by-room?class_room_id=${encodeURIComponent(this.selectedClassRoom)}`;
@@ -51,11 +53,13 @@ function bedsManagement() {
             kg._ui_id = this.generateUUID();
             if (!kg.rows || kg.rows.length === 0) {
                 kg.rows = [{
-                    bed_id: '', room_id: '', id_kelas: '', nm_kelas: '', 
+                    bed_id: '', room_id: '', 
+                    id_kelas: kg.defaults ? kg.defaults.id_kelas || '' : '', 
+                    nm_kelas: kg.defaults ? kg.defaults.nm_kelas || '' : '', 
                     id_perawatan: '', nm_perawatan: '', 
-                    id_tt_siranap: kg.defaults ? kg.defaults.id_tt_siranap : '', 
+                    id_tt_siranap: kg.defaults ? kg.defaults.id_tt_siranap || '' : '', 
                     id_siranap: '', deskripsi_siranap: '', 
-                    covid: kg.defaults ? kg.defaults.covid : '0',
+                    covid: kg.defaults ? kg.defaults.covid || '0' : '0',
                     _ui_id: this.generateUUID()
                 }];
             } else {
@@ -122,8 +126,8 @@ function bedsManagement() {
         kg.rows.push({
           bed_id: '',
           room_id: '',
-          id_kelas: '',
-          nm_kelas: '',
+          id_kelas: kg.defaults && kg.defaults.id_kelas ? kg.defaults.id_kelas : '',
+          nm_kelas: kg.defaults && kg.defaults.nm_kelas ? kg.defaults.nm_kelas : '',
           id_perawatan: '',
           nm_perawatan: '',
           id_tt_siranap: kg.defaults && kg.defaults.id_tt_siranap ? kg.defaults.id_tt_siranap : '',

@@ -828,7 +828,7 @@
           </div>
 
           <div class="space-y-4">
-            <template x-for="(kg, kgIdx) in kamarsData" :key="kgIdx">
+            <template x-for="(kg, kgIdx) in kamarsData" :key="kg._ui_id">
               <div class="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm transition-all" x-data="{ expanded: true }" :id="'kg-' + kg._ui_id">
                 <!-- Header Accordion -->
                 <div class="flex flex-col sm:flex-row items-center justify-between px-5 py-4 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition group" @click="expanded = !expanded">
@@ -880,7 +880,7 @@
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-gray-100">
-                        <template x-for="(row, idx) in kg.rows" :key="idx">
+                        <template x-for="(row, idx) in kg.rows" :key="row._ui_id">
                           <tr class="hover:bg-brand-50/40 transition-colors group" :id="'row-' + row._ui_id">
                             <td class="p-2 align-top"><input type="number" x-model.number="row.bed_id" class="w-20 px-2.5 py-2 border border-brand-200 bg-brand-50 rounded-lg font-bold text-brand-800 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
                             <td class="p-2 align-top"><input type="text" x-model="row.room_id" class="w-24 px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"/></td>
