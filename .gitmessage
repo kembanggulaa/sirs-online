@@ -1,0 +1,19 @@
+# <type>(<scope>): <subject>
+# ─────────────────────────────────────────────────────────────────────────────
+# Types   : feat, fix, docs, style, refactor, test, chore, perf, ci, revert
+# Scope   : config, handler, worker, repo, ui, logger, main
+# Subject : imperative mood, max 50 chars, no period at end
+# ─────────────────────────────────────────────────────────────────────────────
+# Contoh yang BAIK:
+#   feat(worker): add exponential backoff on API timeout
+#   fix(repo): prevent nil pointer in GetBedAvailability
+#   refactor(config): extract security config into nested struct
+#   test(handler): add error path coverage for beds endpoint
+#
+# Body (opsional) — jelaskan KENAPA, bukan apa yang diubah:
+#
+#
+# Footer (opsional) — Breaking changes, issue ref:
+# BREAKING CHANGE: <deskripsi>
+# Closes #<issue-number>
+# ─────────────────────────────────────────────────────────────────────────────
