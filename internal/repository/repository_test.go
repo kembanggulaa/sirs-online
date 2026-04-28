@@ -378,6 +378,112 @@ func TestBedsRepository_GetKamarByClassRoom_EmptyReturnsEmptySlice(t *testing.T)
 	}
 }
 
+func TestBedsRepository_GetBedsByRoom_SkipsBedIDZero(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewBedsRepository(db, "ORG1")
+
+	// Step 1: sk_bed returns one kamar group with defaults
+	skRows := sqlmock.NewRows([]string{"kamar_key", "id_tt_siranap", "covid", "kodekelas", "namakelas"}).
+		AddRow("VIP-A", "TT-VIP", 0, "K01", "Kelas 1")
+	mock.ExpectQuery("SELECT .* FROM sk_bed WITH \\(NOLOCK\\)").
+		WithArgs("IRJ").
+		WillReturnRows(skRows)
+
+	// Step 2: beds returns a row with bed_id = 0 (stale/orphaned data)
+	bedsRows := sqlmock.NewRows([]string{"bed_id", "kamar", "room_id", "id_kelas", "nm_kelas", "id_perawatan", "nm_perawatan", "id_tt_siranap", "id_siranap", "deskripsi_siranap", "covid"}).
+		AddRow(0, "VIP-A", "R1", "K01", "Kelas 1", "P001", "Perawatan 1", "TT-VIP", "S001", "Deskripsi 1", 0)
+	mock.ExpectQuery("SELECT .* FROM beds WITH \\(NOLOCK\\)").
+		WithArgs("IRJ").
+		WillReturnRows(bedsRows)
+
+	result, err := repo.GetBedsByRoom(context.Background(), "IRJ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The accordion group from sk_bed should exist
+	if len(result.Kamars) != 1 {
+		t.Fatalf("expected 1 kamar group, got %d", len(result.Kamars))
+	}
+	// The stale row with bed_id=0 must be skipped — only accordion group remains from sk_bed
+	kg := result.Kamars[0]
+	// Mode stays "new" since no valid bed rows were loaded
+	if result.Mode != "new" {
+		t.Errorf("mode: got %q, want %q (no valid beds loaded, should stay new)", result.Mode, "new")
+	}
+	// Verify no BedRow with BedID=0 exists in result
+	for _, r := range kg.Rows {
+		if r.BedID == 0 {
+			t.Errorf("stale row with bed_id=0 should be skipped, but found it in result")
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestBedsRepository_GetBedsByRoom_SuccessWithValidBeds(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewBedsRepository(db, "ORG1")
+
+	// Step 1: sk_bed returns one kamar group
+	skRows := sqlmock.NewRows([]string{"kamar_key", "id_tt_siranap", "covid", "kodekelas", "namakelas"}).
+		AddRow("ICU-1", "TT-01", 1, "K02", "Kelas 2")
+	mock.ExpectQuery("SELECT .* FROM sk_bed WITH \\(NOLOCK\\)").
+		WithArgs("IRJ").
+		WillReturnRows(skRows)
+
+	// Step 2: beds returns valid rows
+	bedsRows := sqlmock.NewRows([]string{"bed_id", "kamar", "room_id", "id_kelas", "nm_kelas", "id_perawatan", "nm_perawatan", "id_tt_siranap", "id_siranap", "deskripsi_siranap", "covid"}).
+		AddRow(101, "ICU-1", "R1", "K02", "Kelas 2", "P001", "Perawatan 1", "TT-01", "S001", "ICU Deskripsi", 1).
+		AddRow(102, "ICU-1", "R1", "K02", "Kelas 2", "P002", "Perawatan 2", "TT-01", "S002", "ICU Deskripsi 2", 0)
+	mock.ExpectQuery("SELECT .* FROM beds WITH \\(NOLOCK\\)").
+		WithArgs("IRJ").
+		WillReturnRows(bedsRows)
+
+	result, err := repo.GetBedsByRoom(context.Background(), "IRJ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Kamars) != 1 {
+		t.Fatalf("expected 1 kamar group, got %d", len(result.Kamars))
+	}
+	kg := result.Kamars[0]
+	if kg.Kamar != "ICU-1" {
+		t.Errorf("kamar name: got %q, want %q", kg.Kamar, "ICU-1")
+	}
+	if result.Mode != "edit" {
+		t.Errorf("mode: got %q, want %q", result.Mode, "edit")
+	}
+	if len(kg.Rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(kg.Rows))
+	}
+	if kg.Rows[0].BedID != 101 || kg.Rows[1].BedID != 102 {
+		t.Errorf("bed IDs: got %d, %d; want 101, 102", kg.Rows[0].BedID, kg.Rows[1].BedID)
+	}
+	if kg.Rows[0].IDKelas != "K02" {
+		t.Errorf("id_kelas row 0: got %q, want %q", kg.Rows[0].IDKelas, "K02")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 func TestBedsRepository_UpsertBeds_EmptyClassRoomID(t *testing.T) {
 	t.Parallel()
 
