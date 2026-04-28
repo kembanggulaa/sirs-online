@@ -67,7 +67,7 @@ func TestSKHandler_Import_Integration(t *testing.T) {
 	}{
 		{
 			name: "Success 200",
-			body: `{"sk_no":"SK001","rows":[{"id_tt_siranap":"TT1"}]}`,
+			body: `{"sk_no":"SK001","tgl_berlaku":"2024-01-01","rows":[{"id_tt_siranap":"TT1"}]}`,
 			mockFunc: func(ctx context.Context, req repository.SKImportRequest) (int, error) {
 				return 1, nil
 			},
@@ -75,7 +75,7 @@ func TestSKHandler_Import_Integration(t *testing.T) {
 		},
 		{
 			name: "Internal Server Error 500",
-			body: `{"sk_no":"SK001","rows":[{"id_tt_siranap":"TT1"}]}`,
+			body: `{"sk_no":"SK001","tgl_berlaku":"2024-01-01","rows":[{"id_tt_siranap":"TT1"}]}`,
 			mockFunc: func(ctx context.Context, req repository.SKImportRequest) (int, error) {
 				return 0, errors.New("deadlock")
 			},

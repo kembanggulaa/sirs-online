@@ -247,6 +247,16 @@ func GetActiveSKNoCurrent() string {
 	return *p
 }
 
+// SetActiveSKNo sets the active SK number (for testing)
+func SetActiveSKNo(skNo string) {
+	currentSKNo.Store(&skNo)
+}
+
+// SetRunningFlag sets the worker running status (for testing)
+func SetRunningFlag(v bool) {
+	runningFlag.Store(v)
+}
+
 // bedsMu melindungi bedsState dari concurrent read/write
 var bedsMu sync.RWMutex
 

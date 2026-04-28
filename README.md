@@ -1,113 +1,121 @@
 # SIRS Online Bridging System V3
 
-> Sistem otomatis untuk mensinkronisasi data ketersediaan tempat tidur dari **SIMRS (SQL Server)** ke **API RS Online Kemenkes**.
+> Automated system for synchronizing bed availability data from **SIMRS (SQL Server)** to **API RS Online Kemenkes**.
 
 ---
 
-## 📋 Daftar Isi
+## Table of Contents
 
-1. [Apa Itu SIRS Online?](#1-apa-itu-sirs-online)
-2. [Fitur Utama](#2-fitur-utama)
-3. [Arsitektur Sistem](#3-arsitektur-sistem)
-4. [Prasyarat](#4-prasyarat)
-5. [Instalasi & Konfigurasi](#5-instalasi--konfigurasi)
-6. [Menjalankan Aplikasi](#6-menjalankan-aplikasi)
-7. [Dashboard — 6 Tab](#7-dashboard--6-tab)
-8. [Mengelola SK & Import Excel (Tab 5)](#8-mengelola-sk--import-excel-tab-5)
-9. [Endpoint API](#9-endpoint-api)
+1. [Overview](#1-overview)
+2. [Key Features](#2-key-features)
+3. [System Architecture](#3-system-architecture)
+4. [Prerequisites](#4-prerequisites)
+5. [Installation & Configuration](#5-installation--configuration)
+6. [Running the Application](#6-running-the-application)
+7. [Dashboard — 6 Tabs](#7-dashboard--6-tabs)
+8. [Managing SK & Excel Import (Tab 5)](#8-managing-sk--excel-import-tab-5)
+9. [API Endpoints](#9-api-endpoints)
 10. [Testing](#10-testing)
-11. [Konvensi Git](#11-konvensi-git)
-12. [Dokumentasi Lengkap](#12-dokumentasi-lengkap)
+11. [Git Conventions](#11-git-conventions)
 
 ---
 
-## 1. Apa Itu SIRS Online?
+## 1. Overview
 
-SIRS Online Bridging V3 adalah **layanan latar belakang** (*background service*) yang dibangun dengan Go untuk **RSUD Sleman**. Sistem ini berfungsi sebagai **jembatan** antara database SIMRS internal dan API publik Kemenkes.
+SIRS Online Bridging V3 is a **background service** built with Go for **RSUD Sleman**. It acts as a bridge between the internal SIMRS database and the Ministry of Health's public API.
 
-### Cara Kerja Singkat
+### How It Works
 
-Setiap **2 jam** (atau manual), sistem:
-1. Mendeteksi SK (Surat Keterangan) yang masih aktif dari database SIMRS
-2. Mengambil data ketersediaan tempat tidur dari database
-3. Mengirim laporan ke **API Kemenkes** (`sirs.kemkes.go.id`)
+Every **2 hours** (or manually), the system:
+1. Detects the active SK (Surat Keterangan / Official Letter) from the SIMRS database
+2. Fetches bed availability data
+3. Sends a report to the **Kemenkes API** (`sirs.kemkes.go.id`)
 
-### Siapa yang Perlu Menggunakan?
+### Who Should Use?
 
-- **Operator SIMRS** — mengelola SK dan memetakan tempat tidur
-- **Administrator IT** — deploy dan monitoring server
-- **Tim Yankes** — memantau data RS Online Kemenkes
+- **SIMRS Operators** — managing SK and mapping beds
+- **IT Administrators** — deploying and monitoring the server
+- **Yankes Team** — monitoring RS Online Kemenkes data
 
 ---
 
-## 2. Fitur Utama
+## 2. Key Features
 
-| Fitur | Penjelasan |
+| Feature | Description |
 |---|---|
-| **Sinkronisasi Otomatis** | Worker pool berjalan setiap N jam (default: 2 jam) |
-| **Sinkronisasi Manual** | Tombol "Sync Now" untuk trigger kapan saja |
-| **Dashboard Web** | Antarmuka browser untuk monitoring dan kontrol (6 tab) |
-| **Manajemen SK** | Buat, edit, dan import data Surat Keterangan via Excel |
-| **Pemetaan Tempat Tidur** | Pemetaan `class_room_id` ke data Kemenkes |
-| **Graceful Shutdown** | Berhenti dengan baik saat service dihentikan |
-| **Windows Service** | Jalan 24/7 tanpa perlu login operator |
-| **Structured Logging** | Log tersimpan di file, 200 baris terakhir bisa dilihat via API |
+| **Automatic Sync** | Worker pool runs every N hours (default: 2 hours) |
+| **Manual Sync** | "Sync Now" button for on-demand triggering |
+| **Web Dashboard** | Browser interface for monitoring and control (6 tabs) |
+| **SK Management** | Create, edit, and import SK data via Excel |
+| **Bed Mapping** | Map `class_room_id` to Kemenkes data |
+| **Graceful Shutdown** | Clean shutdown when service is stopped |
+| **Windows Service** | Runs 24/7 without operator login |
+| **Structured Logging** | Logs stored in file, last 200 lines viewable via API |
 
 ---
 
-## 3. Arsitektur Sistem
+## 3. System Architecture
 
 ```
 sirs-online/
-├── main.go                     # Titik masuk (console / Windows Service)
-├── config/config.go            # Konfigurasi dari .env
+├── main.go                     # Entry point (console / Windows Service)
+├── config/config.go            # Configuration from .env
 ├── internal/
-│   ├── handler/                # Endpoint HTTP
+│   ├── handler/                # HTTP endpoints
 │   │   ├── api_handler.go      # beds, logs, sync, worker status
-│   │   ├── sk_handler.go      # Manajemen SK (list, detail, import)
-│   │   ├── beds_handler.go     # Pemetaan tempat tidur
-│   │   └── proxy_handler.go    # Proxy ke API Kemenkes
-│   ├── worker/                 # Inti sistem sinkronisasi
-│   │   ├── dispatcher.go       # Penjadwal ticker & antrian job
-│   │   ├── worker.go           # Logika sync (DB → Kemenkes PUT)
-│   │   └── client.go           # HTTP client ke Kemenkes
-│   ├── repository/             # Query ke database SIMRS
+│   │   ├── sk_handler.go       # SK management (list, detail, import)
+│   │   ├── beds_handler.go      # Bed mapping
+│   │   └── proxy_handler.go    # Proxy to Kemenkes API
+│   ├── worker/                 # Core sync system
+│   │   ├── dispatcher.go       # Ticker scheduler & job queue
+│   │   ├── worker.go           # Sync logic (DB → Kemenkes PUT)
+│   │   └── client.go           # HTTP client to Kemenkes
+│   ├── repository/             # SQL Server queries
 │   │   ├── bed_repository.go  # GetActiveSKNo, GetBedAvailability
 │   │   ├── sk_repository.go   # SK list, detail, bulk insert
-│   │   └── beds_repository.go # Rooms, kamar, upsert mapping
-│   └── logger/                 # Logger ke file
-└── web/static/                 # Dashboard Alpine.js + Tailwind CSS
+│   │   └── beds_repository.go  # Rooms, kamar, upsert mapping
+│   └── logger/                 # File-based logger
+└── web/static/                 # Dashboard (Alpine.js + Tailwind CSS)
 ```
 
-### Alur Sinkronisasi
+### Sync Flow
 
 ```
-[Ticker setiap 2 jam] ──atau── [Tombol Sync Now]
+[Ticker every 2 hours] ──or── [Sync Now Button]
         │
         ▼
-  Dispatcher.dispatch()
+  Dispatcher.dispatch() → Job channel
         │
         ▼
   Worker.processJob()
-   ├── 1. GetActiveSKNo()        → Ambil SK aktif dari sk_bed
-   ├── 2. GetBedAvailability()   → Ambil data bed dari SIMRS
-   ├── 3. GET /Fasyankes         → Ambil mapping id_t_tt dari Kemenkes
-   └── 4. PUT /Fasyankes/{id_tt} → Kirim data per ruangan (dengan retry)
+   ├── 1. GetActiveSKNo()        → Query sk_bed WHERE tgl_berakhir IS NULL
+   ├── 2. GetBedAvailability()   → Temp table #temp_ranap + main query in ONE tx
+   ├── 3. GET /Fasyankes         → Fetch id_t_tt mapping from Kemenkes
+   └── 4. PUT /Fasyankes/{id_tt} → Send per room (with retry, max RETRY_MAX+1)
 ```
 
+### Critical Rules
+
+- **Both `#temp_ranap` and main query must run on the same `*sql.Tx`** — temp table is session-bound in SQL Server
+- **All SQL queries MUST use parameterized queries (`?` placeholders)** — string interpolation = SQL injection vulnerability
+- **Repository interfaces** (`internal/repository/interfaces.go`) enable mockable testability:
+  - `BedRepositoryInterface` — Worker queries
+  - `SKRepositoryInterface` — SKHandler queries
+  - `BedsRepositoryInterface` — BedsHandler queries
+
 ---
 
-## 4. Prasyarat
+## 4. Prerequisites
 
-- **Go 1.23+** — [download di golang.org/dl](https://golang.org/dl/)
-- **SQL Server SIMRS** — akses host, port, user, password, nama database
-- **Kredensial API Kemenkes** — `API_RS_ID` dan `API_PASS` dari Kemenkes
-- **Windows** — untuk mode Windows Service (opsional)
-- ** direktori `logs/`** — dibuat manual sebelum pertama kali jalan
+- **Go 1.23+** — [download at golang.org/dl](https://golang.org/dl/)
+- **SQL Server SIMRS** — host, port, user, password, database name
+- **Kemenkes API Credentials** — `API_RS_ID` and `API_PASS` from Kemenkes
+- **Windows** — for Windows Service mode (optional)
+- **`logs/` directory** — create manually before first run
 
 ---
 
-## 5. Instalasi & Konfigurasi
+## 5. Installation & Configuration
 
 ### 5.1 Clone & Install Dependencies
 
@@ -117,82 +125,83 @@ cd sirs-online
 go mod tidy
 ```
 
-### 5.2 Buat Folder Logs
+### 5.2 Create Logs Directory
 
 ```bash
 mkdir logs
 ```
 
-File log akan ditulis ke `logs/sirs.log`. Jika folder tidak ada, aplikasi bisa gagal atau log tidak tersimpan.
+Log file will be written to `logs/sirs.log`. If the folder doesn't exist, the application may fail or logs won't be saved.
 
-### 5.3 Buat File `.env`
+### 5.3 Create `.env` File
 
 ```bash
 copy .env.example .env
 ```
 
-Edit file `.env` dengan nilai sebenarnya:
+Edit `.env` with actual values:
 
 ```env
-# ── Database SIMRS (SQL Server) ──────────────────────────────────────
+# ── SIMRS Database (SQL Server) ──────────────────────────────────────
 DB_HOST=localhost
 DB_PORT=1433
 DB_USER=sa
 DB_PASS=P@ssw0rdDB
 DB_NAME=db_simrs_utama
 
-# ── API RS Online Kemenkes ────────────────────────────────────────────
+# ── Kemenkes RS Online API ───────────────────────────────────────────
 API_URL=https://sirs.kemkes.go.id/fo/index.php
 API_RS_ID=KODE_RS_ANDA
 API_PASS=PASSWORD_API_RAHASIA
 
-# ── Operasional ───────────────────────────────────────────────────────
+# ── Operational ─────────────────────────────────────────────────────
 APP_PORT=9271
 SYNC_INTERVAL_HOURS=2
 RETRY_MAX=2
 LOG_FILE=logs/sirs.log
 ORG_UNIT_CODE=KODE_RS_ANDA
 
-# ── TLS (untuk API pemerintah dengan sertifikat self-signed) ───────────
+# ── TLS (for government APIs with self-signed certificates) ─────────
 TLS_SKIP_VERIFY=false
 
-# ── Keamanan ──────────────────────────────────────────────────────────
+# ── Security ────────────────────────────────────────────────────────
 DASHBOARD_ORIGIN=http://localhost:9271
 MAX_BODY_BYTES=1048576
 ```
 
-### Referensi Variabel `.env`
+### Environment Variable Reference
 
-| Variabel | Default | Penjelasan |
+| Variable | Default | Description |
 |---|---|---|
-| `DB_HOST` | — | Host SQL Server |
-| `DB_PORT` | `1433` | Port SQL Server |
-| `DB_USER` | — | Username database SIMRS |
-| `DB_PASS` | — | Password database |
-| `DB_NAME` | — | Nama database SIMRS |
-| `API_URL` | — | Base URL API Kemenkes |
-| `API_RS_ID` | — | Kode RS (header X-rs-id) |
-| `API_PASS` | — | Password API Kemenkes |
-| `APP_PORT` | `9271` | Port dashboard HTTP |
-| `SYNC_INTERVAL_HOURS` | `2` | Interval sync otomatis (jam) |
-| `RETRY_MAX` | `2` | Jumlah retry jika PUT gagal |
-| `LOG_FILE` | `logs/sirs.log` | Lokasi file log |
-| `TLS_SKIP_VERIFY` | `false` | Skip verifikasi TLS |
-| `ORG_UNIT_CODE` | — | Kode RS untuk org_unit_code |
-| `DASHBOARD_ORIGIN` | — | Origin CORS dashboard |
-| `MAX_BODY_BYTES` | `1048576` | Maks ukuran body POST/PUT |
+| `DB_HOST` | — | SQL Server host |
+| `DB_PORT` | `1433` | SQL Server port |
+| `DB_USER` | — | SIMRS database username |
+| `DB_PASS` | — | Database password |
+| `DB_NAME` | — | SIMRS database name |
+| `API_URL` | — | Kemenkes API base URL |
+| `API_RS_ID` | — | RS code (X-rs-id header) |
+| `API_PASS` | — | Kemenkes API password |
+| `EXECUTIVE_API_URL` | — | Executive dashboard API URL (optional) |
+| `APP_PORT` | `9271` | Dashboard HTTP port |
+| `SYNC_INTERVAL_HOURS` | `2` | Auto-sync interval (hours) |
+| `RETRY_MAX` | `2` | Retry attempts if PUT fails |
+| `LOG_FILE` | `logs/sirs.log` | Log file location |
+| `TLS_SKIP_VERIFY` | `false` | Skip TLS verification |
+| `ORG_UNIT_CODE` | — | Hospital organization unit code |
+| `DASHBOARD_ORIGIN` | — | CORS origin for dashboard |
+| `MAX_BODY_BYTES` | `1048576` | Max POST/PUT body size |
 
 ---
 
-## 6. Menjalankan Aplikasi
+## 6. Running the Application
 
-### Mode Development (Console)
+### Development Mode (Console)
 
 ```bash
 go run main.go
 ```
 
-Buka dashboard di: **`http://localhost:9271`**
+Open dashboard at: **`http://localhost:9271`**
 
 ### Build Binary
 
@@ -201,162 +210,156 @@ go build -o sirs-online.exe .
 ./sirs-online.exe
 ```
 
-### Mode Windows Service (Produksi)
+### Windows Service Mode (Production)
 
 ```bash
-# Daftar sebagai Windows Service (jalankan sebagai Administrator)
+# Register as Windows Service (run as Administrator)
 sc create SIRSOnline binPath="C:\path\to\sirs-online.exe" start=auto
 
-# Jalankan service
+# Start service
 sc start SIRSOnline
 
-# Hentikan service
+# Stop service
 sc stop SIRSOnline
 
-# Hapus service
+# Delete service
 sc delete SIRSOnline
 ```
 
-> **Catatan:** Aplikasi mendeteksi mode secara otomatis. Jika login sebagai Administrator atau di Terminal interactif → jalan sebagai console app. Jika tidak → jalan sebagai Windows Service.
+> **Note:** The application auto-detects mode. Administrator login or interactive Terminal → console app. If not → Windows Service.
 
 ---
 
-## 7. Dashboard — 6 Tab
+## 7. Dashboard — 6 Tabs
 
-Dashboard tersedia di `http://localhost:9271` dengan **6 tab**:
+Dashboard available at `http://localhost:9271` with **6 tabs**:
 
-| Tab | Nama | Fungsi |
+| Tab | Name | Function |
 |---|---|---|
-| **1** | Info Ruang | Data ketersediaan bed real-time dari hasil sync terakhir |
-| **2** | Master Referensi | Data referensi tempat tidur dari Kemenkes (hanya baca) |
-| **3** | Manajemen TT | Form untuk tambah/edit tempat tidur ke Kemenkes |
-| **4** | Operasional & Worker | Log aktivitas, tombol Sync Now, status worker |
-| **5** | SK Manajemen | Kelola Surat Keterangan (SK) — termasuk import Excel |
-| **6** | Beds Management | Pemetaan `class_room_id` → kamar → `id_t_tt` |
+| **1** | Info Ruang | Real-time bed availability from last sync |
+| **2** | Master Referensi | Read-only reference data from Kemenkes |
+| **3** | Manajemen TT | POST/PUT forms for manual bed management |
+| **4** | Operasional & Worker | Activity logs, Sync Now button, worker status |
+| **5** | SK Manajemen | Manage Official Letters — including Excel import |
+| **6** | Beds Management | `class_room_id` → kamar → `id_t_tt` mapping (upsert) |
 
-### Tab Eksekutif
+### Executive Dashboard
 
-Selain dashboard utama, tersedia dashboard eksekutif di **`web/static/eksekutif.html`** untuk pemantauan level manajemen.
+Additional executive dashboard at **`web/static/eksekutif.html`** for management-level monitoring.
 
 ---
 
-## 8. Mengelola SK & Import Excel (Tab 5)
+## 8. Managing SK & Excel Import (Tab 5)
 
-Tab 5 digunakan untuk **membuat dan mengimport data Surat Keterangan (SK)** ke tabel `sk_bed` di database SIMRS.
+Tab 5 is used to **create and import SK (Surat Keterangan) data** into the `sk_bed` table in SIMRS database.
 
-### Langkah-Langkah Import via Excel
+### Excel Import Steps
 
-1. **Buka Tab 5 — SK Manajemen**
-2. **Step 1**: Isi *Nomor SK Baru* dan *Tanggal Berlaku*
-3. **Unggah File Excel**: Klik tombol **"Pilih File Excel"** atau drag-and-drop file `.xlsx`
-4. **Step 2**: Data dari Excel akan muncul. Review dan perbaiki jika perlu.
-5. **Step 3**: Klik **Simpan** — SK lama (jika ada) akan otomatis dipensiunkan.
+1. **Open Tab 5 — SK Manajemen**
+2. **Step 1**: Fill in *New SK Number* and *Effective Date*
+3. **Upload Excel File**: Click **"Choose File Excel"** or drag-and-drop `.xlsx` file
+4. **Step 2**: Data from Excel appears. Review and edit if needed.
+5. **Step 3**: Click **Save** — old SK (if any) will be automatically retired.
 
-### Format Kolom Excel (15 Kolom)
+### Excel Column Format (15 Columns)
 
-File Excel harus memiliki **header row** dengan kolom-kolom berikut:
+Excel file must have **header row** with the following columns:
 
-| No | Nama Kolom | Tipe | Keterangan |
+| No | Column Name | Type | Description |
 |---|---|---|---|
-| 1 | `clinic_id` | text | ID klinik (boleh kosong) |
-| 2 | `class_room_id` | text | ID bangsal/ruangan |
-| 3 | `kelas` | text | Kelas perawatan |
-| 4 | `bed` | number | Jumlah tempat tidur |
-| 5 | `id_tt_siranap` | text | ID TT dari Kemenkes |
-| 6 | `ruang_siranap` | text | Nama ruangan Siranap |
-| 7 | `kelas_siranap` | text | Kelas Siranap |
-| 8 | `covid` | number | Flag COVID (0 atau 1) |
-| 9 | `siranap` | text | Nama Siranap |
-| 10 | `jml_ruang_siranap` | number | Jumlah ruang (default 1) |
-| 11 | `kodekelas` | text | Kode kelas |
-| 12 | `namakelas` | text | Nama kelas |
-| 13 | `namaruang` | text | Nama ruang (fallback jika kamar kosong) |
-| 14 | `kris` | text | Indikator kris |
-| 15 | `kamar` | text | Nomor kamar |
+| 1 | `clinic_id` | text | Clinic ID (can be empty) |
+| 2 | `class_room_id` | text | Ward/room ID |
+| 3 | `kelas` | text | Care class |
+| 4 | `bed` | number | Number of beds |
+| 5 | `id_tt_siranap` | text | TT ID from Kemenkes |
+| 6 | `ruang_siranap` | text | Siranap room name |
+| 7 | `kelas_siranap` | text | Siranap class |
+| 8 | `covid` | number | COVID flag (0 or 1) |
+| 9 | `siranap` | text | Siranap name |
+| 10 | `jml_ruang_siranap` | number | Room count (default 1) |
+| 11 | `kodekelas` | text | Class code |
+| 12 | `namakelas` | text | Class name |
+| 13 | `namaruang` | text | Room name (fallback if kamar empty) |
+| 14 | `kris` | text | Kris indicator |
+| 15 | `kamar` | text | Room number |
 
-### Template Excel
+### Excel Template
 
-Template siap pakai tersedia di: **`example/sk_bed_import_template.xlsx`**
+Ready-to-use template available at: **`example/sk_bed_import_template.xlsx`**
 
-Buka file tersebut di Excel atau Google Sheets, edit datanya sesuai kebutuhan RS Anda, lalu save.
+Open the file in Excel or Google Sheets, edit the data as needed, then save.
 
-### Catatan Penting
+### Important Notes
 
-- **Urutan kolom fleksibel** — sistem mencari kolom berdasarkan nama header (case-insensitive)
-- **Baris kosong** akan dilewati secara otomatis
-- Jika **SK lama masih aktif**, sistem akan otomatis memensiunkannya (tgl_berakhir = H-1 dari tgl_berlaku SK baru)
-- Proses ini **idempotent** — import ulang dengan SK yang sama akan menimpa data lama
+- **Column order is flexible** — system searches columns by header name (case-insensitive)
+- **Empty rows** are automatically skipped
+- If **old SK is still active**, the system will automatically retire it (tgl_berakhir = H-1 from new SK's tgl_berlaku)
+- This process is **idempotent** — re-importing with the same SK will overwrite old data
 
 ---
 
-## 9. Endpoint API
+## 9. API Endpoints
 
-Semua endpoint berjalan di `http://localhost:{APP_PORT}`.
+All endpoints run at `http://localhost:{APP_PORT}`.
 
-### Dashboard
+### Monitoring & Sync
 
-| Method | Path | Keterangan |
+| Method | Path | Description |
 |---|---|---|
-| `GET` | `/` | Halaman dashboard utama |
-
-### Sinkronisasi & Monitoring
-
-| Method | Path | Keterangan |
-|---|---|---|
-| `GET` | `/api/beds` | Data ketersediaan bed |
-| `GET` | `/api/logs` | 200 baris terakhir dari file log |
-| `POST` | `/api/sync` | Trigger sinkronisasi manual |
-| `GET` | `/api/worker/status` | Status worker (`Running` / `Idle`) |
-| `GET` | `/api/sk-active` | SK aktif yang sedang digunakan |
+| `GET` | `/api/beds` | Bed availability data |
+| `GET` | `/api/logs` | Last 200 lines from log file |
+| `POST` | `/api/sync` | Trigger manual sync |
+| `GET` | `/api/worker/status` | Worker status (`Running` / `Idle`) |
+| `GET` | `/api/sk-active` | Currently active SK number |
 | `GET` | `/api/healthz` | Health check |
 
-### Manajemen SK (Tab 5)
+### SK Management (Tab 5)
 
-| Method | Path | Keterangan |
+| Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/sk/list` | Daftar semua nomor SK |
-| `GET` | `/api/sk/detail?sk_no=<SK>` | Detail SK tertentu |
-| `POST` | `/api/sk/preview` | Preview data sebelum import |
-| `POST` | `/api/sk/import` | Import data SK ke database |
+| `GET` | `/api/sk/list` | List all SK numbers |
+| `GET` | `/api/sk/detail?sk_no=<SK>` | Detail of specific SK |
+| `POST` | `/api/sk/preview` | Preview data before import |
+| `POST` | `/api/sk/import` | Import SK data to database |
 
-### Manajemen Tempat Tidur (Tab 6)
+### Bed Management (Tab 6)
 
-| Method | Path | Keterangan |
+| Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/beds/rooms` | Daftar `class_room_id` |
-| `GET` | `/api/beds/kamar?class_room_id=<ID>` | Daftar kamar |
-| `GET` | `/api/beds/by-room?class_room_id=<ID>` | Data beds per ruangan |
-| `POST` | `/api/beds/upsert` | Simpan/update mapping beds |
+| `GET` | `/api/beds/rooms` | List `class_room_id` |
+| `GET` | `/api/beds/kamar?class_room_id=<ID>` | List rooms |
+| `GET` | `/api/beds/by-room?class_room_id=<ID>` | Raw beds data per room |
+| `POST` | `/api/beds/upsert` | Save/update bed mapping |
 
-### Proxy Kemenkes
+### Kemenkes Proxy
 
-| Method | Path | Keterangan |
+| Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/proxy/referensi` | Referensi TT dari Kemenkes |
-| `GET` | `/api/proxy/fasyankes` | Data Fasyankes yang sudah diinput |
-| `POST` | `/api/kemenkes/tempat-tidur` | Tambah TT baru ke Kemenkes |
-| `PUT` | `/api/kemenkes/tempat-tidur/{id_tt}` | Update TT di Kemenkes |
+| `GET` | `/api/proxy/referensi` | TT reference from Kemenkes |
+| `GET` | `/api/proxy/fasyankes` | Fasyankes data already submitted |
+| `POST` | `/api/kemenkes/tempat-tidur` | Create new TT at Kemenkes |
+| `PUT` | `/api/kemenkes/tempat-tidur/{id_tt}` | Update TT at Kemenkes |
 
 ---
 
 ## 10. Testing
 
-### Jalankan Semua Test
+### Run All Tests
 
 ```bash
 go test ./...
 ```
 
-### Dengan Coverage Report
+### With Coverage Report
 
 ```bash
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
-> **Catatan:** Flag `-race` tidak bisa digunakan di Windows karena `CGO_ENABLED=0`.
+> **Note:** The `-race` flag cannot be used on Windows due to `CGO_ENABLED=0`.
 
-### Integration Test (Repository)
+### Integration Tests (Repository)
 
 ```bash
 TEST_DATABASE_DSN="server=...;port=...;user id=...;password=...;database=..." go test ./internal/repository/... -v -run Integration
@@ -364,44 +367,33 @@ TEST_DATABASE_DSN="server=...;port=...;user id=...;password=...;database=..." go
 
 ---
 
-## 11. Konvensi Git
+## 11. Git Conventions
 
-Proyek ini menggunakan **Conventional Commits**.
+This project uses **Conventional Commits**.
 
 Format:
 ```
 <type>(<scope>): <subject>
 ```
 
-**Tipe:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `revert`
+**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `revert`
 
-**Scope:** `config`, `handler`, `worker`, `repo`, `ui`, `logger`, `main`
+**Scopes:** `config`, `handler`, `worker`, `repo`, `ui`, `logger`, `main`
 
-Contoh commit:
+Commit examples:
 ```bash
 feat(worker): add exponential backoff on API timeout
-fix(repo): prevent nil pointer in GetBedAvailability
+fix(sk_handler): add tgl_berlaku validation on preview and import
 docs(readme): update API endpoint table
 ```
 
-Aktifkan template commit:
+Enable commit template:
 ```bash
 git config commit.template .gitmessage
 ```
 
 ---
 
-## 12. Dokumentasi Lengkap
+## License
 
-Dokumentasi teknis lengkap tersedia:
-
-- [📘 DOKUMENTASI.md](DOKUMENTASI.md) — Panduan instalasi, arsitektur, dan penggunaan UI
-- [🏗 architecture.md](architecture.md) — Arsitektur sistem dan task list
-- [🛏 architecture-input-sk-bed.md](architecture-input-sk-bed.md) — Detail fitur input SK dan pemetaan bed
-- [📊 comprehensive_review.md](comprehensive_review.md) — Review code dan finding
-
----
-
-## Lisensi
-
-Proprietary — **RSUD Sleman**. Seluruh hak cipta dilindungi.
+Proprietary — **RSUD Sleman**. All rights reserved.
