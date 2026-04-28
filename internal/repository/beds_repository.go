@@ -202,6 +202,11 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 		if bBedID.Valid {
 			b.BedID = int(bBedID.Int64)
 		}
+
+		// Skip rows with bed_id = 0 (orphaned/stale data)
+		if bBedID.Valid && bBedID.Int64 == 0 {
+			continue
+		}
 		b.Kamar = kName
 		if bRoomID.Valid {
 			b.RoomID = bRoomID.String
