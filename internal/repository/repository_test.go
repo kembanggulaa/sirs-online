@@ -408,21 +408,15 @@ func TestBedsRepository_GetBedsByRoom_SkipsBedIDZero(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The accordion group from sk_bed should exist
-	if len(result.Kamars) != 1 {
-		t.Fatalf("expected 1 kamar group, got %d", len(result.Kamars))
-	}
 	// The stale row with bed_id=0 must be skipped — only accordion group remains from sk_bed
-	kg := result.Kamars[0]
 	// Mode stays "new" since no valid bed rows were loaded
+	// Kamar groups with zero valid rows are excluded from result
 	if result.Mode != "new" {
 		t.Errorf("mode: got %q, want %q (no valid beds loaded, should stay new)", result.Mode, "new")
 	}
-	// Verify no BedRow with BedID=0 exists in result
-	for _, r := range kg.Rows {
-		if r.BedID == 0 {
-			t.Errorf("stale row with bed_id=0 should be skipped, but found it in result")
-		}
+	// With the fix: kamar groups with no valid bed rows are excluded entirely
+	if len(result.Kamars) != 0 {
+		t.Errorf("kamars: got %d, want 0 (kamar group with no valid rows must be excluded)", len(result.Kamars))
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)

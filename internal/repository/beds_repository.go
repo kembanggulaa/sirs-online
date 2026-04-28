@@ -271,7 +271,11 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 	}
 
 	for _, kName := range kamarOrder {
-		result.Kamars = append(result.Kamars, *kamarsMap[kName])
+		kg := kamarsMap[kName]
+		// Only include kamar groups that have at least one valid bed row
+		if len(kg.Rows) > 0 {
+			result.Kamars = append(result.Kamars, *kg)
+		}
 	}
 
 	return result, nil
