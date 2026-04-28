@@ -1,0 +1,156 @@
+-- ============================================================
+-- SIRS Online Bridging V3 — SIMRS Database Schema Reference
+-- ============================================================
+--
+-- This file documents the table structure required by SIRS
+-- Online Bridging V3. These tables must exist in your SIMRS
+-- database (SQL Server).
+--
+-- The queries in internal/repository/ reference these tables.
+-- If your SIMRS schema differs, adapt the queries accordingly.
+--
+-- ============================================================
+
+-- ============================================================
+-- 1. sk_bed (Surat Keterangan / Official Letter)
+-- ============================================================
+--
+-- Stores the active SK (Surat Keterangan) for each ward/room.
+-- An SK is "active" when tgl_berakhir IS NULL.
+--
+-- The worker uses this table to:
+--   - Find the currently active SK (Query 0)
+--   - Get list of rooms/wards covered by the SK (Query 1)
+--   - Get id_tt_siranap for PUT to Kemenkes
+--
+-- Columns:
+--   sk_no           VARCHAR     — SK number (e.g., "SK/DIR/2026/01")
+--   class_room_id   VARCHAR     — ward/room identifier (e.g., "IRJ", "IRI")
+--   kamar           VARCHAR     — room number within ward (optional, can be NULL)
+--   kelas           VARCHAR     — care class (e.g., "Kelas 1", "VIP")
+--   ruang_siranap   VARCHAR     — Siranap room name
+--   kelas_siranap   VARCHAR     — Siranap class
+--   jml_ruang_siranap INT       — number of rooms for this entry
+--   id_tt_siranap   VARCHAR     — TT ID from Kemenkes Siranap (used for PUT)
+--   bed             INT         — total beds in this room
+--   covid           INT         — COVID flag (0 = non-COVID, 1 = COVID)
+--   siranap         VARCHAR     — Siranap name
+--   kris            VARCHAR     — Kris indicator
+--   clinic_id       VARCHAR     — clinic identifier (optional)
+--   tgl_berlaku     DATE        — effective start date
+--   tgl_berakhir    DATE        — expiry date (NULL = active/ongoing)
+--
+-- Example:
+--   SELECT sk_no FROM sk_bed WHERE tgl_berakhir IS NULL
+--     AND class_room_id <> 'NI.BX'
+
+-- ============================================================
+-- 2. pasien_visitation (Patient Visit / Occupancy)
+-- ============================================================
+--
+-- Tracks current patients occupying beds. A bed is considered
+-- "occupied" when the patient has no discharge (keluar_id = 0)
+-- or is in suspended-discharge state (keluar_id = 33).
+--
+-- The temp table #temp_ranap in GetBedAvailability uses this
+-- to count how many beds are occupied per (class_room_id + kamar).
+--
+-- Columns:
+--   no_registration VARCHAR — patient registration number
+--   class_room_id   VARCHAR — ward/room identifier
+--   bed_id          INT     — bed identifier within the room
+--   keluar_id       INT     — discharge status:
+--                             0   = currently admitted
+--                            33   = suspended discharge (still occupying)
+--                           other = discharged/finished
+--
+-- Note: This table may have a different name in your SIMRS
+-- (e.g., "kunjungan_pasien", "rawat_inap_visitation").
+-- Adapt the query to match your schema.
+
+-- ============================================================
+-- 3. beds (Bed Master Data)
+-- ============================================================
+--
+-- Master list of beds per ward/room. Used to link patient
+-- visitation records to specific beds.
+--
+-- Columns:
+--   class_room_id   VARCHAR — ward/room identifier
+--   bed_id          INT     — bed identifier
+--
+-- Note: In some SIMRS systems, bed data may be embedded
+-- directly in pasien_visitation. Adapt as needed.
+
+-- ============================================================
+-- 4. status_covid (COVID Occupancy Counters)
+-- ============================================================
+--
+-- Per-TT (Tempat Tidur / bed) COVID occupancy counts.
+-- Updated by your local system when patients are admitted/discharged.
+--
+-- The GetBedAvailability query joins this table to get the
+-- Suspek, Konfirmasi, and Antrian counts for each bed.
+--
+-- Columns:
+--   id_tt       VARCHAR — matches id_tt_siranap in sk_bed
+--   status      INT     — occupied by SUSPEK (suspected) cases
+--   konfirmasi  INT     — occupied by CONFIRMED COVID cases
+--   antrian     INT     — number of patients in queue for this bed
+--
+-- These values are sent as-is to Kemenkes PUT payload:
+--   terpakai_suspek     = status
+--   terpakai_konfirmasi = konfirmasi
+--   antrian             = antrian
+
+-- ============================================================
+-- Query Adaptation Guide
+-- ============================================================
+--
+-- If your SIMRS schema differs, here is how each repository
+-- function maps to the tables above:
+--
+-- BedRepository.GetActiveSKNo()
+--   → sk_bed WHERE tgl_berakhir IS NULL
+--
+-- BedRepository.GetBedAvailability()
+--   → pasiens_visitation + beds  : counts occupied beds per room
+--   → sk_bed                     : gets room list and id_tt_siranap
+--   → status_covid               : gets COVID occupancy counts
+--
+-- BedsRepository.GetDistinctClassRooms()
+--   → sk_bed DISTINCT class_room_id
+--
+-- BedsRepository.GetKamarByClassRoom()
+--   → sk_bed WHERE class_room_id = ?
+--
+-- BedsRepository.GetBedsByRoom()
+--   → sk_bed WHERE class_room_id = ?
+--
+-- BedsRepository.UpsertBeds()
+--   → beds (INSERT/UPDATE mapping)
+--
+-- SKRepository.GetSKList()
+--   → sk_bed DISTINCT sk_no ORDER BY tgl_berlaku DESC
+--
+-- SKRepository.GetSKDetail()
+--   → sk_bed WHERE sk_no = ?
+--
+-- SKRepository.BulkInsertSKBed()
+--   → sk_bed (INSERT new rows, UPDATE existing)
+--
+-- ============================================================
+-- Table Aliases / Variations You May Encounter
+-- ============================================================
+--
+-- Different SIMRS systems may use different table names:
+--
+--   pasien_visitation  → bisa: KunjunganPasien, RawatInap, VIPass
+--   beds               → bisa: tm_bed, master_bed, bed_master
+--   status_covid       → bisa: covid_status, covid_counter, tt_status
+--   sk_bed             → biasanya sama (khusus SIRS)
+--
+-- Always use WITH (NOLOCK) hint on SQL Server for read-only
+-- queries to avoid locking issues in production SIMRS.
+--
+-- ============================================================

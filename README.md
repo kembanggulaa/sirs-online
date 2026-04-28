@@ -112,6 +112,7 @@ sirs-online/
 - **Kemenkes API Credentials** — `API_RS_ID` and `API_PASS` from Kemenkes
 - **Windows** — for Windows Service mode (optional)
 - **`logs/` directory** — create manually before first run
+- **SIMRS Tables** — `docs/schema.sql` documents the required database tables. If your SIMRS schema differs, adapt the queries in `internal/repository/` accordingly.
 
 ---
 
