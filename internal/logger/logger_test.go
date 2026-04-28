@@ -1,8 +1,10 @@
 package logger
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -10,11 +12,12 @@ func TestReadLast_EfficientSeek(t *testing.T) {
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "test.log")
 
-	// Generate lines
-	var content string
+	// Generate lines with predictable content
+	var lines []string
 	for i := 1; i <= 20; i++ {
-		content += "Baris Log - " + string(rune(i+'0')) + "\n"
+		lines = append(lines, fmt.Sprintf("Line-%02d data here", i))
 	}
+	content := strings.Join(lines, "\n") + "\n"
 
 	err := os.WriteFile(logPath, []byte(content), 0644)
 	if err != nil {
@@ -25,15 +28,16 @@ func TestReadLast_EfficientSeek(t *testing.T) {
 		name      string
 		readLines int
 		expected  int
-		lastLine  string
+		wantFirst string // first line should contain this
+		wantLast  string  // last line should contain this
 	}{
-		{"baca 5 baris terakhir", 5, 5, "Baris Log - :"},
-		{"baca melebihi batas (30)", 30, 20, "Baris Log - :"},
-		{"baca 0 baris", 0, 0, ""},
+		{"baca 5 baris terakhir", 5, 5, "Line-16", "Line-20"},
+		{"baca 10 baris", 10, 10, "Line-11", "Line-20"},
+		{"baca melebihi batas (30)", 30, 20, "Line-01", "Line-20"},
+		{"baca 0 baris", 0, 0, "", ""},
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ReadLast(logPath, tt.readLines)
 			if err != nil {
@@ -44,12 +48,12 @@ func TestReadLast_EfficientSeek(t *testing.T) {
 				t.Errorf("ukuran result: expect %d, got %d", tt.expected, len(result))
 			}
 
-			// Validate if the last element matches the expected tail
-			if tt.expected > 0 && tt.lastLine != "" {
-				// We won't match contents exactly character to character if not fully mapped,
-				// just verifying it successfully avoids panic and returns lines properly.
-				if result[len(result)-1] == "" {
-					t.Errorf("last string is unexpectedly empty")
+			if tt.expected > 0 {
+				if !strings.Contains(result[0], tt.wantFirst) {
+					t.Errorf("first line should contain %q, got %q", tt.wantFirst, result[0])
+				}
+				if !strings.Contains(result[len(result)-1], tt.wantLast) {
+					t.Errorf("last line should contain %q, got %q", tt.wantLast, result[len(result)-1])
 				}
 			}
 		})

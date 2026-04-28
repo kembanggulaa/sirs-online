@@ -175,7 +175,7 @@ func (r *BedsRepository) GetBedsByRoom(ctx context.Context, classRoomID string) 
 	}
 
 	// 2. Fetch existing beds (all kamars)
-	queryBeds := "SELECT bed_id, ISNULL(kamar, ''), room_id, id_kelas, nm_kelas, id_perawatan, nm_perawatan, id_tt_siranap, id_siranap, deskripsi_siranap, covid FROM beds WITH (NOLOCK) WHERE class_room_id = ? ORDER BY kamar, bed_id"
+	queryBeds := "SELECT bed_id, ISNULL(kamar, ''), room_id, id_kelas, nm_kelas, id_perawatan, nm_perawatan, id_tt_siranap, id_siranap, deskripsi_siranap, covid FROM beds WITH (NOLOCK) WHERE class_room_id = ? AND bed_id IS NOT NULL AND bed_id <> 0 ORDER BY kamar, bed_id"
 	rows, err := r.db.QueryContext(ctx, queryBeds, classRoomID)
 	if err != nil {
 		return result, fmt.Errorf("gagal query beds: %w", err)

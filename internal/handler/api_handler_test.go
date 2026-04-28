@@ -4,8 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+
+	"sirs-online/config"
+	"sirs-online/internal/repository"
+	"sirs-online/internal/worker"
 )
 
 // ─── Helper untuk memeriksa header Content-Type ───────────────────────────────
@@ -306,5 +311,292 @@ func TestWriteJSON_TableDriven(t *testing.T) {
 			}
 			assertContentTypeJSON(t, w)
 		})
+	}
+}
+
+// ─── APIHandler tests ──────────────────────────────────────────────────────────
+
+// dispatcherInterface matches worker.Dispatcher for testability
+type dispatcherInterface interface {
+	TriggerManual() bool
+	IsRunning() bool
+	Stop()
+}
+
+// mockDispatcher implements dispatcherInterface for handler tests
+type mockDispatcher struct {
+	triggerManualFunc func() bool
+	isRunningFunc     func() bool
+}
+
+func (m *mockDispatcher) TriggerManual() bool {
+	if m.triggerManualFunc != nil {
+		return m.triggerManualFunc()
+	}
+	return false
+}
+
+func (m *mockDispatcher) IsRunning() bool {
+	if m.isRunningFunc != nil {
+		return m.isRunningFunc()
+	}
+	return false
+}
+
+func (m *mockDispatcher) Stop() {}
+
+// apiHandlerForTest wraps APIHandler with a mock dispatcher
+type apiHandlerForTest struct {
+	*APIHandler
+	mockDisp *mockDispatcher
+}
+
+func newAPIHandlerForTest(mockDisp *mockDispatcher) *apiHandlerForTest {
+	cfg := &config.Config{
+		Security:    config.SecurityConfig{DashboardOrigin: "*"},
+		Operational: config.OperationalConfig{LogFile: "test.log"},
+	}
+	h := &APIHandler{cfg: cfg}
+	// We can't actually replace the dispatcher since it's a *worker.Dispatcher
+	// but we'll use the mock for tests that don't need the real dispatcher
+	return &apiHandlerForTest{APIHandler: h, mockDisp: mockDisp}
+}
+
+func TestHandleHealthz_Success(t *testing.T) {
+	t.Parallel()
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
+		dispatcher: nil, // not needed for healthz
+	}
+	req := httptest.NewRequest("GET", "/api/healthz", nil)
+	w := httptest.NewRecorder()
+
+	h.handleHealthz(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+	assertContentTypeJSON(t, w)
+	assertCORSHeader(t, w)
+
+	var got map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("gagal decode body JSON: %v", err)
+	}
+	if got["status"] != "ok" {
+		t.Errorf("status: got %q, want %q", got["status"], "ok")
+	}
+}
+
+func TestHandleSKActive_Success(t *testing.T) {
+	t.Parallel()
+
+	// Set global state
+	worker.SetActiveSKNo("SK/TEST/2024")
+
+	// Clean up after test
+	defer worker.SetActiveSKNo("")
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
+		dispatcher: nil, // not needed
+	}
+	req := httptest.NewRequest("GET", "/api/sk-active", nil)
+	w := httptest.NewRecorder()
+
+	h.handleSKActive(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+	assertContentTypeJSON(t, w)
+	assertCORSHeader(t, w)
+
+	var got map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("gagal decode body JSON: %v", err)
+	}
+	if got["sk_no"] != "SK/TEST/2024" {
+		t.Errorf("sk_no: got %q, want %q", got["sk_no"], "SK/TEST/2024")
+	}
+}
+
+func TestHandleSKActive_Empty(t *testing.T) {
+	t.Parallel()
+
+	// Set empty global state
+	worker.SetActiveSKNo("")
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
+		dispatcher: nil,
+	}
+	req := httptest.NewRequest("GET", "/api/sk-active", nil)
+	w := httptest.NewRecorder()
+
+	h.handleSKActive(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var got map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("gagal decode body JSON: %v", err)
+	}
+	if got["sk_no"] != "" {
+		t.Errorf("sk_no: got %q, want empty string", got["sk_no"])
+	}
+}
+
+func TestHandleGetBeds_Success(t *testing.T) {
+	t.Parallel()
+
+	// Set global beds state
+	worker.SetBeds([]repository.BedSiranap{
+		{IDTTSiranap: "TT-01", Siranap: "ICU", JmlRuang: 2, Jumlah: 10, Terisi: 5},
+		{IDTTSiranap: "TT-02", Siranap: "OK", JmlRuang: 1, Jumlah: 5, Terisi: 2},
+	})
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
+		dispatcher: nil,
+	}
+	req := httptest.NewRequest("GET", "/api/beds", nil)
+	w := httptest.NewRecorder()
+
+	h.handleGetBeds(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+	assertContentTypeJSON(t, w)
+	assertCORSHeader(t, w)
+
+	var got []repository.BedSiranap
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("gagal decode body JSON: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("beds count: got %d, want 2", len(got))
+	}
+}
+
+func TestHandleGetLogs_Success(t *testing.T) {
+	t.Parallel()
+
+	// Create temp log file
+	tmpDir := t.TempDir()
+	logPath := tmpDir + "/test.log"
+
+	// Write some log lines
+	content := "Line 1\nLine 2\nLine 3\n"
+	if err := os.WriteFile(logPath, []byte(content), 0644); err != nil {
+		t.Fatalf("gagal membuat file test log: %v", err)
+	}
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}, Operational: config.OperationalConfig{LogFile: logPath}},
+		dispatcher: nil,
+	}
+	req := httptest.NewRequest("GET", "/api/logs", nil)
+	w := httptest.NewRecorder()
+
+	h.handleGetLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+	assertContentTypeJSON(t, w)
+	assertCORSHeader(t, w)
+
+	var got map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("gagal decode body JSON: %v", err)
+	}
+	lines, ok := got["lines"].([]interface{})
+	if !ok {
+		t.Fatalf("lines field missing or wrong type")
+	}
+	if len(lines) != 3 {
+		t.Errorf("lines count: got %d, want 3", len(lines))
+	}
+}
+
+func TestHandleGetLogs_FileNotExist(t *testing.T) {
+	t.Parallel()
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}, Operational: config.OperationalConfig{LogFile: "/nonexistent/path/test.log"}},
+		dispatcher: nil,
+	}
+	req := httptest.NewRequest("GET", "/api/logs", nil)
+	w := httptest.NewRecorder()
+
+	h.handleGetLogs(w, req)
+
+	// Should return 200 with empty lines, not 500
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d ( ReadLast handles missing file gracefully)", w.Code, http.StatusOK)
+	}
+}
+
+func TestHandleWorkerStatus_Idle(t *testing.T) {
+	t.Parallel()
+
+	// Ensure worker is not running
+	worker.SetRunningFlag(false)
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
+		dispatcher: nil, // not needed since we use global runningFlag
+	}
+	req := httptest.NewRequest("GET", "/api/worker/status", nil)
+	w := httptest.NewRecorder()
+
+	h.handleWorkerStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+	assertContentTypeJSON(t, w)
+	assertCORSHeader(t, w)
+
+	var got map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("gagal decode body JSON: %v", err)
+	}
+	if got["status"] != "Idle" {
+		t.Errorf("status: got %q, want %q", got["status"], "Idle")
+	}
+}
+
+func TestHandleWorkerStatus_Running(t *testing.T) {
+	t.Parallel()
+
+	// Simulate worker running
+	worker.SetRunningFlag(true)
+	defer worker.SetRunningFlag(false)
+
+	h := &APIHandler{
+		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
+		dispatcher: nil,
+	}
+	req := httptest.NewRequest("GET", "/api/worker/status", nil)
+	w := httptest.NewRecorder()
+
+	h.handleWorkerStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var got map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("gagal decode body JSON: %v", err)
+	}
+	if got["status"] != "Running" {
+		t.Errorf("status: got %q, want %q", got["status"], "Running")
 	}
 }

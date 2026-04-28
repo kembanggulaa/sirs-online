@@ -80,6 +80,10 @@ func (h *SKHandler) handlePostSKPreview(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "sk_no tidak boleh kosong"})
 		return
 	}
+	if req.TglBerlaku == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tgl_berlaku tidak boleh kosong"})
+		return
+	}
 	if len(req.Rows) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "rows tidak boleh kosong"})
 		return
@@ -103,6 +107,19 @@ func (h *SKHandler) handlePostSKImport(w http.ResponseWriter, r *http.Request) {
 	var req repository.SKImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if req.SKNo == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "sk_no tidak boleh kosong"})
+		return
+	}
+	if req.TglBerlaku == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tgl_berlaku tidak boleh kosong"})
+		return
+	}
+	if len(req.Rows) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "rows tidak boleh kosong"})
 		return
 	}
 
