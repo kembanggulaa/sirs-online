@@ -145,3 +145,214 @@ Setelah aplikasi dijalankan, navigasikan layar Web Browser ke `http://localhost:
    💡 *Penyebab & Solusi*: Platform API Pemerintah kadang mengalami latensi perpindahan rotasi Sertifikat Keamanan SSL. Jika traffic menolak sertifikat tersebut, anda dapat merelaksasi batas cek sertifikat menggunakan parameter `.env` dan beri format: `TLS_SKIP_VERIFY=true`.
 4. **Log tidak tersimpan / Cannot Open Error File Permissions**  
    💡 *Penyebab & Solusi*: Folder path tidak tersedia terlebih dulu. Pastikan folder `logs/` telah termuat kosong di root direktori program, serta OS user dari Windows Service yang berjalan memiliki kapabilitas / izin perihal *Read & Write* file padanya.
+
+## 9. Adaptasi untuk Rumah Sakit Lain (Porting Guide)
+
+Aplikasi ini dirancang spesifik untuk SIMRS dengan schema SQL Server seperti yang digunakan di RSUD Sleman. Jika rumah sakit lain ingin menggunakan aplikasi ini, beberapa bagian kode **harus diubah** sesuai dengan schema SIMRS mereka. Bagian yang paling besar perubahannya adalah query-query di repository.
+
+### 9.1 Database yang Didukung
+
+Kode ini **hanya mendukung SQL Server**. Jika Anda menggunakan PostgreSQL atau MySQL, Anda harus:
+1. Mengganti driver di `go.mod` (dari `github.com/microsoft/go-mssqldb` ke `github.com/lib/pq` atau `go-sql-driver/mysql`)
+2. Mengubah semua query T-SQL ke syntax database yang Anda gunakan
+3. Mengubah koneksi database di `main.go` dan `config/config.go`
+
+**Sintaks T-SQL yang tidak portable:**
+- `WITH (NOLOCK)` — hint tabel SQL Server. Di PostgreSQL/MySQL: hapus atau ganti dengan `FOR UPDATE`
+- `IIF(cond, true_val, false_val)` — fungsi IIF SQL Server. Di database lain: ganti dengan `CASE WHEN cond THEN true_val ELSE false_val END`
+- `ISNULL(expr, default)` — fungsi null-check SQL Server. Di database lain: ganti dengan `COALESCE(expr, default)`
+- `NULLIF(expr, '')` — sama di semua database, tapi perlu hati-hati saat dikombinasikan dengan `LTRIM(RTRIM(...))`
+- CTE `WITH TempRanap AS (...)` — secara syntax ANSI SQL, CTE didukung PostgreSQL dan MySQL 8+. Namun logic SQL Server session-bound temp table (`#temp`) tidak tersedia di database lain
+
+### 9.2 Langkah Perubahan per Repository
+
+#### A. `internal/repository/bed_repository.go`
+
+**1) `GetActiveSKNo()` — baris 40**
+
+Query mencari SK aktif berdasarkan `tgl_berakhir IS NULL`:
+```sql
+-- SQL Server (asli):
+SELECT DISTINCT sk_no FROM sk_bed WHERE tgl_berakhir IS NULL
+```
+**Yang perlu diubah:** Pastikan tabel `sk_bed` ada di SIMRS Anda, dan kolom `sk_no` serta `tgl_berakhir` namanya sesuai. Jika nama kolom beda (misal `tgl_berakhir` jadi `tanggal_berakhir`), sesuaikan.
+
+**2) `GetBedAvailability(skNo)` — baris 68**
+
+Ini adalah query **paling kompleks** dan **paling mungkin perlu diubah**. Query ini punya dua bagian:
+
+**Bagian CTE `TempRanap`** (baris 71-85) — Menghitung pasien yang masih dirawat (bed terisi):
+```sql
+-- SQL Server (asli):
+WITH TempRanap AS (
+    SELECT CONCAT(b.class_room_id, b.kamar) AS kamar
+    FROM pasien_visitation pv WITH (NOLOCK)
+    LEFT JOIN beds b WITH (NOLOCK) ON b.class_room_id = pv.CLASS_ROOM_ID AND b.bed_id = pv.bed_id
+    WHERE pv.no_registration <> ''
+      AND pv.class_room_id IS NOT NULL
+      AND (pv.keluar_id = 0 OR pv.keluar_id = 33)  -- belum keluar / pulang
+      AND pv.class_room_id IN (
+        SELECT DISTINCT class_room_id FROM sk_bed WITH (NOLOCK)
+        WHERE sk_no = ? AND tgl_berakhir IS NULL AND class_room_id <> 'NI.BX'
+      )
+)
+```
+**Yang harus Anda ubah:**
+- `pasien_visitation` → ganti dengan nama tabel pasien di SIMRS Anda
+- `pv.CLASS_ROOM_ID` → sesuaikan dengan nama kolom Class Room ID di tabel pasien Anda
+- `pv.bed_id` → sesuaikan dengan nama kolom bed ID di SIMRS Anda
+- `pv.keluar_id = 0 OR pv.keluar_id = 33` → logika "belum keluar". Nilai `0` dan `33` adalah kode spesifik dari SIMRS RSUD Sleman. Rumah sakit lain mungkin punya kode berbeda (misal `status = 'active'`, atau `tanggal_keluar IS NULL`). Anda mungkin butuh kolom berbeda atau logika berbeda untuk menandai pasien masih dirawat
+- `beds` → nama tabel master bed di SIMRS Anda. Jika tidak punya tabel `beds`, Anda bisa menghilangkan JOIN ke `beds` dan cukup pakai `pv.class_room_id` dan `pv.kamar` langsung
+
+**Contoh jika pakai PostgreSQL (tanpa CTE temp table):**
+```sql
+-- Anda bisa inline-kan subquery langsung tanpa CTE:
+SELECT
+    sk.id_tt_siranap,
+    sk.class_room_id,
+    CASE WHEN sk.kamar IS NULL THEN sk.ruang_siranap ELSE sk.ruang_siranap || '-' || sk.kamar END AS siranap,
+    ...
+FROM sk_bed sk
+INNER JOIN status_covid sc ON sc.id_tt = sk.id_tt_siranap
+LEFT JOIN (
+    SELECT class_room_id || kamar AS kamar, COUNT(*) AS terisi
+    FROM pasien_visit
+    WHERE keluar_id NOT IN (1, 2, 3)  -- disesuaikan
+    GROUP BY class_room_id || kamar
+) t ON t.kamar = sk.class_room_id || sk.kamar
+WHERE ...
+```
+
+**Bagian Main Query** (baris 86-114):
+```sql
+-- SQL Server (asli):
+SELECT
+    sk.id_tt_siranap,
+    sk.class_room_id,
+    IIF(sk.kamar IS NULL, sk.ruang_siranap, CONCAT(sk.ruang_siranap, '-', sk.kamar)) AS siranap,
+    sk.jml_ruang_siranap,
+    sk.kelas_siranap AS kelas,
+    CONCAT(sk.class_room_id, sk.kamar) AS kamar,
+    sk.kelas_siranap,
+    SUM(sk.bed) AS jumlah,
+    sk.covid,
+    sc.status,
+    sc.konfirmasi,
+    sc.antrian,
+    ISNULL(t.terisi, 0) AS terisi
+FROM sk_bed sk WITH (NOLOCK)
+    INNER JOIN status_covid sc WITH (NOLOCK) ON sc.id_tt = sk.id_tt_siranap
+    LEFT JOIN (...) t ON t.kamar = CONCAT(sk.class_room_id, sk.kamar)
+WHERE sk.sk_no = ? AND sk.tgl_berakhir IS NULL AND sk.class_room_id <> 'NI.BX'
+GROUP BY ...
+```
+**Yang perlu diubah:**
+- `sk_bed` → pastikan tabel dan kolom ini ada di SIMRS Anda. Kolom yang dipakai: `id_tt_siranap`, `class_room_id`, `kamar`, `ruang_siranap`, `jml_ruang_siranap`, `kelas_siranap`, `bed`, `covid`, `sk_no`, `tgl_berakhir`
+- `status_covid` → tabel dan kolom untuk status COVID per TT (`id_tt`, `status`, `konfirmasi`, `antrian`). Jika tidak punya tabel ini, Anda perlu menghapus `INNER JOIN status_covid` dan menyesuaikan kolom yang di-SELECT
+- `IIF()` → ganti dengan `CASE WHEN`
+- `CONCAT()` → di PostgreSQL/MySQL bisa tetap pakai `||` atau `CONCAT()` (fungsi yang sama)
+- `ISNULL(t.terisi, 0)` → ganti dengan `COALESCE(t.terisi, 0)`
+- `WITH (NOLOCK)` → hapus semua hint ini untuk PostgreSQL/MySQL
+
+#### B. `internal/repository/beds_repository.go`
+
+**3) `GetDistinctClassRooms()` — baris 59**
+
+Query sangat sederhana, hanya ambil daftar `class_room_id` dari `sk_bed`:
+```sql
+-- SQL Server (asli):
+SELECT DISTINCT class_room_id FROM sk_bed WITH (NOLOCK) WHERE tgl_berakhir IS NULL ORDER BY class_room_id
+```
+**Yang perlu diubah:** Pastikan tabel `sk_bed` dan kolom `class_room_id` serta `tgl_berakhir` ada.
+
+**4) `GetKamarByClassRoom(classRoomID)` — baris 84**
+```sql
+-- SQL Server (asli):
+SELECT DISTINCT kamar FROM sk_bed WITH (NOLOCK) WHERE class_room_id = ? AND tgl_berakhir IS NULL ORDER BY kamar
+```
+**Yang perlu diubah:** Pastikan kolom `kamar` ada di tabel `sk_bed`. Jika nama kolom beda, sesuaikan.
+
+**5) `GetBedsByRoom(classRoomID)` — baris 113**
+
+Query ini punya dua SELECT:
+
+**Query defaults** (baris 125):
+```sql
+-- SQL Server (asli):
+SELECT ISNULL(NULLIF(LTRIM(RTRIM(kamar)), ''), ISNULL(namaruang, '')) as kamar_key,
+       id_tt_siranap, covid, ISNULL(kodekelas, ''), ISNULL(namakelas, '')
+FROM sk_bed WITH (NOLOCK)
+WHERE class_room_id = ? AND tgl_berakhir IS NULL
+```
+**Yang perlu diubah:**
+- `ISNULL(NULLIF(LTRIM(RTRIM(kamar)), ''), namaruang)` → di PostgreSQL: `COALESCE(NULLIF(TRIM(kamar), ''), namaruang)`. Di MySQL: `COALESCE(NULLIF(TRIM(kamar), ''), namaruang)`
+- Kolom yang dipakai: `kamar`, `namaruang`, `id_tt_siranap`, `covid`, `kodekelas`, `namakelas`
+
+**Query beds** (baris 178):
+```sql
+-- SQL Server (asli):
+SELECT bed_id, ISNULL(kamar, ''), room_id, id_kelas, nm_kelas,
+       id_perawatan, nm_perawatan, id_tt_siranap, id_siranap,
+       deskripsi_siranap, covid
+FROM beds WITH (NOLOCK)
+WHERE class_room_id = ? AND bed_id IS NOT NULL AND bed_id <> 0
+ORDER BY kamar, bed_id
+```
+**Yang perlu diubah:** Pastikan tabel `beds` ada dengan kolom-kolom tersebut. Kolom yang WAJIB ada: `bed_id`, `kamar`, `class_room_id`. Sisanya (seperti `room_id`, `id_kelas`, `nm_kelas`, dll) mungkin perlu disesuaikan atau di-skip jika tidak ada di schema Anda.
+
+**6) `UpsertBeds(ctx, req)` — baris 285**
+
+Fungsi ini melakukan INSERT dan UPDATE. Perlu dicek:
+- Struktur `BedsUpsertRequest` (di `interfaces.go` atau `types.go`) — sesuaikan jika kolom Anda beda
+- Kolom-kolom yang di-INSERT/UPDATE: `class_room_id`, `kamar`, `bed_id`, `room_id`, `id_kelas`, `nm_kelas`, `id_perawatan`, `nm_perawatan`, `id_tt_siranap`, `id_siranap`, `deskripsi_siranap`, `covid`
+- Transaksi (`BEGIN TRAN`, `COMMIT`, `ROLLBACK`) — di PostgreSQL/MySQL sintaksnya beda: `BEGIN` / `COMMIT` / `ROLLBACK` tanpa spasi
+
+#### C. `internal/repository/sk_repository.go`
+
+**7) `GetSKList()` — baris 157**
+
+```sql
+-- SQL Server (asli):
+SELECT DISTINCT sk_no FROM sk_bed ORDER BY sk_no DESC
+```
+Cukup straightforward, pastikan kolom `sk_no` ada.
+
+**8) `GetSKDetail(skNo)` — baris 180**
+
+Ambil semua baris untuk satu SK tertentu. Pastikan kolom `sk_no` ada.
+
+**9) `BulkInsertSKBed(ctx, req)` — baris 43**
+
+Fungsi ini:
+1. Update `tgl_berakhir` SK lama
+2. Ambil `max_bed_id` untuk generate ID baru
+3. INSERT batch data baru
+
+**Yang perlu diubah:**
+- `UPDATE sk_bed SET tgl_berakhir = ? WHERE sk_no = (SELECT DISTINCT sk_no FROM sk_bed WHERE tgl_berakhir IS NULL AND class_room_id = ?)` — sesuaikan dengan logika yang sama untuk menandai SK lama tidak aktif
+- `SELECT MAX(bed_id) FROM sk_bed` — pastikan kolom `bed_id` ada
+- Batch INSERT dengan `INSERT INTO sk_bed (...) VALUES (...)` — pastikan semua kolom yang di-insert ada di schema Anda. Kolom yang dipakai: `clinic_id`, `class_room_id`, `kelas`, `bed`, `id_tt_siranap`, `ruang_siranap`, `kelas_siranap`, `covid`, `siranap`, `jml_ruang_siranap`, `kodekelas`, `namakelas`, `namaruang`, `kris`, `kamar`, `org_unit_code`, `sk_no`, `tgl_berlaku`, `tgl_berakhir`, `created_at`, `updated_at`
+
+### 9.3 Ringkasan Tabel dan Kolom yang Harus Ada di SIMRS Anda
+
+| Tabel | Kolom yang Dipakai | Keterangan |
+|---|---|---|
+| `sk_bed` | `sk_no`, `class_room_id`, `kamar`, `namaruang`, `id_tt_siranap`, `ruang_siranap`, `jml_ruang_siranap`, `kelas_siranap`, `bed`, `covid`, `kodekelas`, `namakelas`, `kris`, `tgl_berlaku`, `tgl_berakhir`, `created_at`, `updated_at` | SK definitions dan mapping bed |
+| `beds` | `bed_id`, `class_room_id`, `kamar`, `room_id`, `id_kelas`, `nm_kelas`, `id_perawatan`, `nm_perawatan`, `id_tt_siranap`, `id_siranap`, `deskripsi_siranap`, `covid` | Master data bed per ruangan |
+| `status_covid` | `id_tt`, `status`, `konfirmasi`, `antrian` | Status COVID per TT |
+| `pasien_visitation` (atau tabel pasien) | `no_registration`, `class_room_id`, `bed_id`, `keluar_id` | Data pasien yang sedang dirawat |
+
+Jika SIMRS Anda tidak memiliki tabel `status_covid`, Anda bisa mengabaikan kolom tersebut di query dan meng-handle-nya di kode Go dengan memberikan nilai default.
+
+### 9.4 Checklist Adaptasi
+
+1. [ ] Ganti driver database di `go.mod` dan `main.go`
+2. [ ] Adaptasi semua query T-SQL → syntax database target
+3. [ ] Hapus semua `WITH (NOLOCK)` atau ganti dengan `FOR UPDATE` (PostgreSQL)
+4. [ ] Ganti `IIF()` → `CASE WHEN`
+5. [ ] Ganti `ISNULL()` → `COALESCE()`
+6. [ ] Adaptasi `ISNULL(NULLIF(LTRIM(RTRIM(...)), ''), ...)` → `COALESCE(NULLIF(TRIM(...), ''), ...)`
+7. [ ] Untuk `GetBedAvailability`: inline-kan subquery `TempRanap` langsung di main query jika database tidak mendukung CTE temp table (PostgreSQL/MySQL)
+8. [ ] Ganti `BEGIN TRAN` / `COMMIT` / `ROLLBACK` transaksi ke sintaks database target
+9. [ ] Validasi semua kolom `sk_bed`, `beds`, `status_covid`, dan tabel pasien ada di SIMRS Anda
+10. [ ] Ubah nilai `keluar_id` di query `GetBedAvailability` sesuai kode "belum keluar" di SIMRS Anda

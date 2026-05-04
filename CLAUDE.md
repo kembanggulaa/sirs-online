@@ -50,6 +50,39 @@ Worker.processJob()
 ### Critical DB Rule
 Both temp table (#temp_ranap) and main bed availability query **must run on the same `*sql.Tx`** (single connection). The temp table is session-bound in SQL Server.
 
+**Tables a clone must adapt:** The `GetBedAvailability()` query at `bed_repository.go:68` has hard SIMRS schema dependencies:
+
+**CTE `TempRanap`** (lines 71-85) — determines occupied beds from `pasien_visitation`:
+```sql
+WITH TempRanap AS (
+    SELECT CONCAT(b.class_room_id, b.kamar) AS kamar
+    FROM pasien_visitation pv WITH (NOLOCK)
+    LEFT JOIN beds b WITH (NOLOCK) ON b.class_room_id = pv.CLASS_ROOM_ID AND b.bed_id = pv.bed_id
+    WHERE pv.no_registration <> ''
+      AND pv.class_room_id IS NOT NULL
+      AND (pv.keluar_id = 0 OR pv.keluar_id = 33)  -- not discharged
+      AND pv.class_room_id IN (SELECT DISTINCT class_room_id FROM sk_bed WHERE sk_no = ? AND tgl_berakhir IS NULL AND class_room_id <> 'NI.BX')
+)
+```
+**To adapt:** Replace `pasien_visitation` with your own patient occupancy table. `keluar_id = 0 OR 33` means "still admitted" — your hospital may use different values or a separate "bed_status" column. If you don't have a temp table concept, you can inline the occupancy subquery directly in the main SELECT.
+
+**Main query** (lines 86-114) — joins `sk_bed` + `status_covid` + `TempRanap`:
+- `sk_bed`: SK definitions (`class_room_id`, `kamar`, `id_tt_siranap`, `bed`, `ruang_siranap`, `jml_ruang_siranap`, `kelas_siranap`, `covid`, `sk_no`, `tgl_berlaku`, `tgl_berakhir`)
+- `status_covid`: per-TT COVID status (`id_tt`, `status`, `konfirmasi`, `antrian`)
+- `beds`: Bed master (`class_room_id`, `kamar`, `bed_id`)
+
+If your hospital doesn't have a `status_covid` table or uses different column names, you need to adjust the `INNER JOIN status_covid` section (lines 101 and 113) accordingly.
+
+**This codebase is SQL Server only.** All repository queries use T-SQL syntax that is **not portable** to PostgreSQL or MySQL:
+- `WITH (NOLOCK)` — SQL Server table hints (use `FOR UPDATE` in Postgres or remove in MySQL)
+- `IIF(cond, true, false)` — SQL Server inline IF (use `CASE WHEN` for cross-DB)
+- `CONCAT(a, b)` — SQL Server concat (ANSI but also works in others; safe to keep)
+- `ISNULL(expr, default)` — SQL Server null check (use `COALESCE` for cross-DB)
+- `NULLIF(expr, '')` — works in both, but the `LTRIM(RTRIM(...))` pattern needs adapters
+- CTE `WITH TempRanap AS (...)` — ANSI SQL, works in Postgres/MySQL 8+, but the temp table + JOIN pattern is tuned for SQL Server session scope
+
+If targeting Postgres/MySQL, **all repository queries must be rewritten** — not just the patient occupancy subquery. The `github.com/denisenkom/go-mssqldb` driver is hardcoded in `main.go` and `config/config.go`. Switching databases requires replacing the driver, updating all query syntax, and refactoring the transaction handling (SQL Server temp tables (`#temp`) are session-bound and not available in other databases).
+
 ### Repository Layer
 Three interfaces in `internal/repository/interfaces.go`:
 - `BedRepositoryInterface` — used by Worker (GetActiveSKNo, GetBedAvailability)
@@ -66,10 +99,38 @@ All queries MUST use parameterized queries (`?` placeholders). String interpolat
 - `BedsHandler` — bed mapping: rooms, kamar, upsert
 - `ProxyHandler` — Kemenkes API proxy (injects auth headers server-side so browser JS never sees credentials)
 
-### BedsHandler Accordion Grouping Logic (`GetBedsByRoom`)
-Groups come from `sk_bed` (kamar_key = `kamar` or fallback to `namaruang`), then beds from `beds` table are matched by `kamar`. Fallback rule: if a bed's `kamar` is empty and only one group exists, it's assigned to that group — otherwise a new group with defaults is created.
+### API Endpoint Summary
+```
+GET  /api/beds                  — bed availability data
+GET  /api/logs                  — last 200 log lines
+POST /api/sync                  — trigger manual sync
+GET  /api/worker/status         — worker state (Running/Idle)
+GET  /api/sk-active             — active SK number
+GET  /api/healthz               — health check
+GET  /api/sk/list               — list all SK numbers
+GET  /api/sk/detail?sk_no=<SK>  — SK detail by number
+POST /api/sk/preview            — preview Excel import data
+POST /api/sk/import             — execute SK import
+GET  /api/beds/rooms            — list class_room_id values
+GET  /api/beds/kamar?class_room_id=<ID> — list kamar for a room
+GET  /api/beds/by-room?class_room_id=<ID> — beds data per room
+POST /api/beds/upsert          — save/update bed mapping
+GET  /api/proxy/referensi        — TT reference from Kemenkes
+GET  /api/proxy/fasyankes        — submitted fasyankes data
+POST /api/kemenkes/tempat-tidur          — create TT at Kemenkes
+PUT  /api/kemenkes/tempat-tidur/{id_tt}  — update TT at Kemenkes
+```
 
-**Impact:** If `sk_bed.kamar` and `beds.kamar` values mismatch, new accordion groups with defaults (id_tt_siranap, covid, id_kelas) are auto-created.
+### BedsHandler Accordion Grouping Logic (`GetBedsByRoom`)
+Groups are determined by `kamar_key` computed from `sk_bed` as:
+```
+ISNULL(NULLIF(LTRIM(RTRIM(kamar)), ''), namaruang)
+```
+Beds from `beds` table are matched to groups by their `kamar` field:
+- If `beds.kamar` is empty and exactly one group exists → assign to that group
+- If `beds.kamar` doesn't match any group → a new group is auto-created with default `id_tt_siranap`, `covid`, `id_kelas`
+
+**Common issue:** If `sk_bed.kamar` and `beds.kamar` values don't match, the accordion shows unexpected groups with defaults. Trailing spaces or casing differences in `kamar` can also cause mismatches.
 
 ### Startup Order (from `main.go`)
 `config.Load()` → `logger.Init()` → `defer logger.Close()` → DB open/ping → `repository.New()` / `NewSKRepository()` / `NewBedsRepository(db, orgUnitCode)` → `dispatcher.StartWithContext(ctx)` → HTTP handlers → `srv.ListenAndServe()`
@@ -116,6 +177,7 @@ mkdir logs
 ```
 main.go                          # Entry point (console/service detection)
 config/config.go                 # Viper config with nested struct domains
+docs/schema.sql                 # SIMRS table schema (sk_bed, beds, #temp_ranap)
 internal/
 ├── handler/
 │   ├── api_handler.go           # Internal monitoring endpoints
@@ -134,7 +196,8 @@ internal/
 └── logger/logger.go            # File logger with ReadLast()
 web/static/                      # Alpine.js + Tailwind CSS dashboard (static, no build step)
 test/beds_management/           # Tab 6 Beds Management testing resources
-example/                       # Example files (e.g., sk_bed_import_template.xlsx)
+example/
+└── sk_bed_import_template.xlsx  # Ready-to-use 15-column template for Tab 5 import
 ```
 
 ### Dashboard (web/static/)
@@ -164,26 +227,13 @@ Conventional commits via `.gitmessage` template:
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `revert`
 Scopes: `config`, `handler`, `worker`, `repo`, `ui`, `logger`, `main`
 
+NOTE: Do NOT add AI as co-author — only the user's registered email may appear in commits.
+
 Enable template: `git config commit.template .gitmessage`
-
-## ABSOLUTE RULE — NO EXCEPTIONS
-
-**NEVER add AI (Claude, Copilot, or any AI) as co-author, committer, or contributor in git commits or PR/MR messages.**
-Only the user's registered email may appear in commits. This is company policy — commits and PRs with AI
-authorship WILL BE REJECTED. Do not use `--author`, `Co-authored-by`, `Generated by`, `Created with`, or any
-other mechanism to attribute work to AI. Never add AI attribution text (e.g., "Generated by Claude",
-"Built with AI") in commit messages, PR/MR descriptions, or code comments. This applies to ALL commits
-and PRs, including those made by tools and subagents.
 
 ## Critical Rules (never forget)
 
-- Always use `task <name>` to run commands — never run raw commands directly.
-- Python: always `uv` (never pip, conda, pipenv). No bash scripts.
-- Node.js: always `bun`/`bunx` (never node, npm, npx).
-- Containers: use `docker`/`docker compose` or `podman`/`podman compose` — whichever is available. Prefer auto-detection in Taskfile.
 - Use brainstorming skill when user starts a new topic or plans something.
-- Check and update INSTRUCTION.md and README.md when making significant changes.
-- Conventional Commits: `<type>(<scope>): <description>`.
-- Branch per change, squash merge. Use `gh`/`glab` for PR/MR and CI checks.
+- Check and update CLAUDE.md and README.md when making significant changes.
 - Never automatically commit and push. Wait for explicit user approval.
-- Before pushing: `git fetch --tags && git pull --rebase` then `git push`.
+- Before pushing: `git fetch --tags && git pull --rebase`
