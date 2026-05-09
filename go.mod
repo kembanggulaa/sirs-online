@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
+	github.com/gin-gonic/gin v1.10.0
 	github.com/go-resty/resty/v2 v2.12.0
 	github.com/microsoft/go-mssqldb v1.9.2
 	github.com/spf13/viper v1.18.2
