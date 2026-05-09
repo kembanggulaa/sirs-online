@@ -1,23 +1,20 @@
 package handler
 
 import (
-	"encoding/json"
-	"net/http"
+	"github.com/gin-gonic/gin"
 )
 
 // writeJSON menulis response JSON dengan status code yang ditentukan.
 // Digunakan oleh semua handler — menggantikan writeBedsJSON dan writeSKJSON.
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+func writeJSON(c *gin.Context, status int, data interface{}) {
+	c.JSON(status, data)
 }
 
 // setCORSHeader menetapkan header CORS sesuai origin yang dikonfigurasi.
 // Dipanggil di awal setiap handler agar header ada sebelum WriteHeader.
-func setCORSHeader(w http.ResponseWriter, origin string) {
+func setCORSHeader(c *gin.Context, origin string) {
 	if origin == "" {
 		origin = "*"
 	}
-	w.Header().Set("Access-Control-Allow-Origin", origin)
+	c.Header("Access-Control-Allow-Origin", origin)
 }
