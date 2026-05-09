@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"sirs-online/internal/repository"
 )
 
@@ -44,10 +45,12 @@ func TestSKHandler_GetSKList(t *testing.T) {
 			mockRepo := &MockSKRepository{GetSKListFunc: tt.mockFunc}
 			h := NewSKHandler(mockRepo, nil)
 
-			req := httptest.NewRequest("GET", "/api/sk/list", nil)
+			gin.SetMode(gin.TestMode)
 			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("GET", "/api/sk/list", nil)
 
-			h.handleGetSKList(w, req)
+			h.handleGetSKList(c)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("status got %d; want %d", w.Code, tt.wantStatus)
@@ -91,10 +94,12 @@ func TestSKHandler_Import_Integration(t *testing.T) {
 			mockRepo := &MockSKRepository{BulkInsertSKBedFunc: tt.mockFunc}
 			h := NewSKHandler(mockRepo, nil)
 
-			req := httptest.NewRequest("POST", "/api/sk/import", strings.NewReader(tt.body))
+			gin.SetMode(gin.TestMode)
 			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("POST", "/api/sk/import", strings.NewReader(tt.body))
 
-			h.handlePostSKImport(w, req)
+			h.handlePostSKImport(c)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("status got %d; want %d", w.Code, tt.wantStatus)
