@@ -22,6 +22,7 @@ The application includes a browser-based web dashboard for real-time monitoring,
   - `github.com/microsoft/go-mssqldb` (Mssql database connector driver)
   - `github.com/go-resty/resty/v2` (HTTP Client for Kemenkes Web Services API)
   - `github.com/spf13/viper` (Configuration data loading management)
+  - `github.com/gin-gonic/gin` (HTTP framework - migrated from net/http in v2.0.0)
   - `golang.org/x/sys` (Core OS system library, especially Windows service integration)
 
 ## Installation & Configuration
