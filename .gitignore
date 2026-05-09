@@ -41,3 +41,4 @@ comprehensive_review*.md
 remidiation-plan*.md
 review-test*.md
 post-codebase-review*.md
+.worktrees/
