@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	_ "github.com/microsoft/go-mssqldb"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/debug"
@@ -118,29 +119,39 @@ func run(ctx context.Context) {
 	// 5. Mulai Ticker (berjalan di background, dihentikan saat ctx selesai)
 	go dispatcher.StartWithContext(ctx)
 
-	// 6. Setup HTTP Server
-	mux := http.NewServeMux()
+	// 6. Setup Gin Engine with middleware
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+
+	// Global middleware
+	r.Use(gin.Recovery())
+	r.Use(gin.Logger())
+	r.Use(handler.CORSMiddleware(cfg.Security.DashboardOrigin))
+	r.Use(handler.BodySizeMiddleware(cfg.Security.MaxBodyBytes))
 
 	// Endpoint internal
 	apiHandler := handler.New(cfg, dispatcher)
-	apiHandler.RegisterRoutes(mux)
+	apiHandler.RegisterRoutes(r)
 
 	skHandler := handler.NewSKHandler(skRepo, cfg)
-	skHandler.RegisterRoutes(mux)
+	skHandler.RegisterRoutes(r)
 
 	bedsHandler := handler.NewBedsHandler(bedsRepo, cfg)
-	bedsHandler.RegisterRoutes(mux)
+	bedsHandler.RegisterRoutes(r)
 
-	// Endpoint proxy Kemenkes (dikelola oleh ProxyHandler)
+	// Endpoint proxy Kemenkes
 	proxyHandler := handler.NewProxyHandler(cfg)
-	proxyHandler.RegisterRoutes(mux)
+	proxyHandler.RegisterRoutes(r)
+
+	// Static file serving
+	r.Static("/", "web/static")
 
 	addr := fmt.Sprintf(":%d", cfg.Operational.AppPort)
 	logger.Info("Dashboard berjalan di http://localhost%s", addr)
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      r,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
