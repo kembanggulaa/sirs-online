@@ -17,10 +17,11 @@ SIRS Online Bridging V3 adalah aplikasi perantara (bridging) yang menghubungkan 
 - **Sistem Operasi**: Windows (dirancang langsung mendukung Windows Service API maupun Console App interaktif).
 - **Database**: Microsoft SQL Server (Mssql).
 - **Bahasa Pemrograman**: Golang (v1.23.0 atau yang lebih baru).
-- **Dependensi Utama**: 
+- **Dependensi Utama**:
   - `github.com/microsoft/go-mssqldb` (Driver konektor database mssql)
   - `github.com/go-resty/resty/v2` (HTTP Client untuk memanggil Web Services API Kemenkes)
   - `github.com/spf13/viper` (Manajemen Load Data Konfigurasi/Env)
+  - `github.com/gin-gonic/gin` (HTTP framework - migrasi dari net/http pada v2.0.0)
   - `golang.org/x/sys` (Library sistem core OS, terkhusus Windows service integration)
 
 ## 3. Instalasi & Konfigurasi (Installation & Configuration)
@@ -82,6 +83,9 @@ Buka `http://localhost:9271` pada penelusuran web peramban (Chrome/Firefox/Edge)
 
 ## 5. Arsitektur Sistem (System Architecture)
 Aplikasi dibangun menggunakan pola rancangan modular di dalam direktori `internal/` (Sesuai standard Go idiom layout struct):
+
+**HTTP Framework**: Aplikasi menggunakan **Gin** (`github.com/gin-gonic/gin`) sejak v2.0.0 untuk routing dan middleware. Sebelumnya menggunakan `net/http` standard library.
+
 - **Handler (`internal/handler`)**: 
   - `APIHandler`: Mengurus rute yang mengekspos endpoint internal (cek status logger, memicu sinkronisasi dispatcher secara paksa (manual override), metrik utilitas program).
   - `ProxyHandler`: Merutekan/menyuntikkan kredensial rahasia (ID RS/Pass) yang ada dalam `config` kepada peramban yang merequest referensi TT, meneruskan (`proxying`) traffic client ke web service `Kemenkes` tanpa harus menulis data kredensial mentah (Hardcode) pada JavaScript Front-End (`web/static/js/*`).

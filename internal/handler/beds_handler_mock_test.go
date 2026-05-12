@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"sirs-online/internal/repository"
 )
 
@@ -44,10 +45,12 @@ func TestBedsHandler_GetRooms(t *testing.T) {
 			mockRepo := &MockBedsRepository{GetDistinctClassRoomsFunc: tt.mockFunc}
 			h := NewBedsHandler(mockRepo, nil)
 
-			req := httptest.NewRequest("GET", "/api/beds/rooms", nil)
+			gin.SetMode(gin.TestMode)
 			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("GET", "/api/beds/rooms", nil)
 
-			h.handleGetRooms(w, req)
+			h.handleGetRooms(c)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("status got %d; want %d", w.Code, tt.wantStatus)
@@ -91,10 +94,12 @@ func TestBedsHandler_UpsertBeds_Integration(t *testing.T) {
 			mockRepo := &MockBedsRepository{UpsertBedsFunc: tt.mockFunc}
 			h := NewBedsHandler(mockRepo, nil)
 
-			req := httptest.NewRequest("POST", "/api/beds/upsert", strings.NewReader(tt.body))
+			gin.SetMode(gin.TestMode)
 			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("POST", "/api/beds/upsert", strings.NewReader(tt.body))
 
-			h.handlePostUpsertBeds(w, req)
+			h.handlePostUpsertBeds(c)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("status got %d; want %d", w.Code, tt.wantStatus)

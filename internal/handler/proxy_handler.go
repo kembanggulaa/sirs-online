@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"sirs-online/config"
 	"sirs-online/internal/logger"
 	"sirs-online/internal/worker"
@@ -22,34 +24,33 @@ func NewProxyHandler(cfg *config.Config) *ProxyHandler {
 	return &ProxyHandler{cfg: cfg}
 }
 
-// RegisterRoutes mendaftarkan semua route proxy ke ServeMux.
-func (h *ProxyHandler) RegisterRoutes(mux *http.ServeMux) {
+// RegisterRoutes mendaftarkan semua route proxy ke Gin Engine.
+func (h *ProxyHandler) RegisterRoutes(r *gin.Engine) {
 	// Tab 2: GET referensi TT dari Kemenkes
-	mux.HandleFunc("GET /api/proxy/referensi", h.makeProxyHandler("GET",
+	r.GET("/api/proxy/referensi", h.makeProxyHandler("GET",
 		h.cfg.API.URL+"/Referensi/tempat_tidur"))
 
 	// Tab 3: GET data Fasyankes yang sudah diinputkan RS
-	mux.HandleFunc("GET /api/proxy/fasyankes", h.makeProxyHandler("GET",
+	r.GET("/api/proxy/fasyankes", h.makeProxyHandler("GET",
 		h.cfg.API.URL+"/Fasyankes"))
 
 	// Tab 4: POST tempat tidur baru
-	mux.HandleFunc("POST /api/kemenkes/tempat-tidur", h.makeForwardHandler("POST",
+	r.POST("/api/kemenkes/tempat-tidur", h.makeForwardHandler("POST",
 		h.cfg.API.URL+"/Fasyankes"))
 
 	// Tab 4: PUT tempat tidur (update manual)
-	mux.HandleFunc("PUT /api/kemenkes/tempat-tidur/{id_tt}", h.makeForwardHandler("PUT",
+	r.PUT("/api/kemenkes/tempat-tidur/:id_tt", h.makeForwardHandler("PUT",
 		h.cfg.API.URL+"/Fasyankes"))
 
 	// Dashboard Eksekutif
-	mux.HandleFunc("GET /api/beds/executive", h.makeProxyHandler("GET",
+	r.GET("/api/beds/executive", h.makeProxyHandler("GET",
 		h.cfg.API.ExecutiveURL))
 }
 
 // makeProxyHandler membuat handler GET read-only ke Kemenkes (untuk Tab 2 & 3).
 // Menggunakan shared client dengan TLS skip verify dan logging diagnostik.
-func (h *ProxyHandler) makeProxyHandler(method, url string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeader(w, h.cfg.Security.DashboardOrigin)
+func (h *ProxyHandler) makeProxyHandler(method, url string) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		client := worker.NewKemenkesClient(h.cfg.Operational.TLSSkipVerify)
 		timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
 
@@ -63,7 +64,7 @@ func (h *ProxyHandler) makeProxyHandler(method, url string) http.HandlerFunc {
 
 		if err != nil {
 			logger.Error("[PROXY] Gagal %s %s: %v", method, url, err)
-			writeJSON(w, http.StatusBadGateway, map[string]string{
+			writeJSON(c, http.StatusBadGateway, map[string]string{
 				"error": "Gagal menghubungi API Kemenkes: " + err.Error(),
 			})
 			return
@@ -72,27 +73,25 @@ func (h *ProxyHandler) makeProxyHandler(method, url string) http.HandlerFunc {
 		logger.Info("[PROXY] %s %s → status %d (%d bytes)",
 			method, url, resp.StatusCode(), len(resp.Body()))
 
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(resp.StatusCode())
-		_, _ = w.Write(resp.Body())
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.Writer.WriteHeader(resp.StatusCode())
+		_, _ = c.Writer.Write(resp.Body())
 	}
 }
 
 // makeForwardHandler meneruskan request POST/PUT dari dashboard ke Kemenkes.
-func (h *ProxyHandler) makeForwardHandler(method, url string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeader(w, h.cfg.Security.DashboardOrigin)
-
+func (h *ProxyHandler) makeForwardHandler(method, url string) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		maxBytes := h.cfg.Security.MaxBodyBytes
 		if maxBytes <= 0 {
 			maxBytes = 1 << 20 // 1 MB
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-		defer r.Body.Close()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+		defer c.Request.Body.Close()
 
 		var body map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
+		if err := json.NewDecoder(c.Request.Body).Decode(&body); err != nil {
+			writeJSON(c, http.StatusBadRequest, map[string]string{
 				"error": "Body tidak valid: " + err.Error(),
 			})
 			return
@@ -113,7 +112,7 @@ func (h *ProxyHandler) makeForwardHandler(method, url string) http.HandlerFunc {
 
 		if err != nil {
 			logger.Error("[PROXY] Gagal %s %s: %v", method, url, err)
-			writeJSON(w, http.StatusBadGateway, map[string]string{
+			writeJSON(c, http.StatusBadGateway, map[string]string{
 				"error": "Gagal menghubungi API Kemenkes: " + err.Error(),
 			})
 			return
@@ -122,8 +121,8 @@ func (h *ProxyHandler) makeForwardHandler(method, url string) http.HandlerFunc {
 		logger.Info("[PROXY] %s %s → status %d (%d bytes)",
 			method, url, resp.StatusCode(), len(resp.Body()))
 
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(resp.StatusCode())
-		_, _ = w.Write(resp.Body())
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.Writer.WriteHeader(resp.StatusCode())
+		_, _ = c.Writer.Write(resp.Body())
 	}
 }

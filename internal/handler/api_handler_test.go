@@ -8,25 +8,39 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"sirs-online/config"
 	"sirs-online/internal/repository"
 	"sirs-online/internal/worker"
 )
 
+// createTestContext is a helper to create *gin.Context for testing
+func createTestContext(method, path string, body *strings.Reader) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	if body != nil {
+		c.Request = httptest.NewRequest(method, path, body)
+	} else {
+		c.Request = httptest.NewRequest(method, path, nil)
+	}
+	return c, w
+}
+
 // ─── Helper untuk memeriksa header Content-Type ───────────────────────────────
 
-func assertContentTypeJSON(t *testing.T, w *httptest.ResponseRecorder) {
+func assertContentTypeJSON(t *testing.T, c *gin.Context) {
 	t.Helper()
-	ct := w.Header().Get("Content-Type")
+	ct := c.Writer.Header().Get("Content-Type")
 	if !strings.HasPrefix(ct, "application/json") {
 		t.Errorf("Content-Type: got %q, want prefix %q", ct, "application/json")
 	}
 }
 
 // assertCORSHeader memeriksa bahwa CORS header telah di-set (tidak kosong)
-func assertCORSHeader(t *testing.T, w *httptest.ResponseRecorder) {
+func assertCORSHeader(t *testing.T, c *gin.Context) {
 	t.Helper()
-	cors := w.Header().Get("Access-Control-Allow-Origin")
+	cors := c.Writer.Header().Get("Access-Control-Allow-Origin")
 	if cors == "" {
 		t.Error("Access-Control-Allow-Origin header tidak di-set")
 	}
@@ -37,13 +51,13 @@ func assertCORSHeader(t *testing.T, w *httptest.ResponseRecorder) {
 func TestWriteJSON_StatusAndBody(t *testing.T) {
 	t.Parallel()
 
-	w := httptest.NewRecorder()
-	writeJSON(w, http.StatusTeapot, map[string]string{"key": "value"})
+	c, w := createTestContext("GET", "/test", nil)
+	writeJSON(c, http.StatusTeapot, map[string]string{"key": "value"})
 
 	if w.Code != http.StatusTeapot {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusTeapot)
 	}
-	assertContentTypeJSON(t, w)
+	assertContentTypeJSON(t, c)
 
 	var got map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
@@ -57,13 +71,13 @@ func TestWriteJSON_StatusAndBody(t *testing.T) {
 func TestWriteJSON_NilData(t *testing.T) {
 	t.Parallel()
 
-	w := httptest.NewRecorder()
-	writeJSON(w, http.StatusOK, nil)
+	c, w := createTestContext("GET", "/test", nil)
+	writeJSON(c, http.StatusOK, nil)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
-	assertContentTypeJSON(t, w)
+	assertContentTypeJSON(t, c)
 }
 
 // ─── setCORSHeader ────────────────────────────────────────────────────────────
@@ -71,10 +85,10 @@ func TestWriteJSON_NilData(t *testing.T) {
 func TestSetCORSHeader_WithOrigin(t *testing.T) {
 	t.Parallel()
 
-	w := httptest.NewRecorder()
-	setCORSHeader(w, "http://localhost:9271")
+	c, _ := createTestContext("GET", "/test", nil)
+	setCORSHeader(c, "http://localhost:9271")
 
-	cors := w.Header().Get("Access-Control-Allow-Origin")
+	cors := c.Writer.Header().Get("Access-Control-Allow-Origin")
 	if cors != "http://localhost:9271" {
 		t.Errorf("CORS: got %q, want %q", cors, "http://localhost:9271")
 	}
@@ -83,10 +97,10 @@ func TestSetCORSHeader_WithOrigin(t *testing.T) {
 func TestSetCORSHeader_EmptyFallsBackToWildcard(t *testing.T) {
 	t.Parallel()
 
-	w := httptest.NewRecorder()
-	setCORSHeader(w, "")
+	c, _ := createTestContext("GET", "/test", nil)
+	setCORSHeader(c, "")
 
-	cors := w.Header().Get("Access-Control-Allow-Origin")
+	cors := c.Writer.Header().Get("Access-Control-Allow-Origin")
 	if cors != "*" {
 		t.Errorf("CORS fallback: got %q, want %q", cors, "*")
 	}
@@ -99,10 +113,9 @@ func TestBedsHandler_GetKamar_MissingParam(t *testing.T) {
 	t.Parallel()
 
 	h := &BedsHandler{repo: nil, cfg: nil} // repo nil: OK karena validasi sebelum DB call
-	req := httptest.NewRequest("GET", "/api/beds/kamar", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/beds/kamar", nil)
 
-	h.handleGetKamar(w, req)
+	h.handleGetKamar(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -119,10 +132,9 @@ func TestBedsHandler_GetBedsByRoom_MissingParam(t *testing.T) {
 	t.Parallel()
 
 	h := &BedsHandler{repo: nil, cfg: nil}
-	req := httptest.NewRequest("GET", "/api/beds/by-room", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/beds/by-room", nil)
 
-	h.handleGetBedsByRoom(w, req)
+	h.handleGetBedsByRoom(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -134,10 +146,10 @@ func TestBedsHandler_Upsert_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	h := &BedsHandler{repo: nil, cfg: nil}
-	req := httptest.NewRequest("POST", "/api/beds/upsert", strings.NewReader("bukan-json"))
-	w := httptest.NewRecorder()
+	body := strings.NewReader("bukan-json")
+	c, w := createTestContext("POST", "/api/beds/upsert", body)
 
-	h.handlePostUpsertBeds(w, req)
+	h.handlePostUpsertBeds(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -149,11 +161,10 @@ func TestBedsHandler_Upsert_MissingClassRoomID(t *testing.T) {
 	t.Parallel()
 
 	h := &BedsHandler{repo: nil, cfg: nil}
-	body := `{"class_room_id":"","rows":[{"kamar_id":"K1"}]}`
-	req := httptest.NewRequest("POST", "/api/beds/upsert", strings.NewReader(body))
-	w := httptest.NewRecorder()
+	body := strings.NewReader(`{"class_room_id":"","rows":[{"kamar_id":"K1"}]}`)
+	c, w := createTestContext("POST", "/api/beds/upsert", body)
 
-	h.handlePostUpsertBeds(w, req)
+	h.handlePostUpsertBeds(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -165,11 +176,10 @@ func TestBedsHandler_Upsert_EmptyRows(t *testing.T) {
 	t.Parallel()
 
 	h := &BedsHandler{repo: nil, cfg: nil}
-	body := `{"class_room_id":"R-VIP","rows":[]}`
-	req := httptest.NewRequest("POST", "/api/beds/upsert", strings.NewReader(body))
-	w := httptest.NewRecorder()
+	body := strings.NewReader(`{"class_room_id":"R-VIP","rows":[]}`)
+	c, w := createTestContext("POST", "/api/beds/upsert", body)
 
-	h.handlePostUpsertBeds(w, req)
+	h.handlePostUpsertBeds(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -183,10 +193,9 @@ func TestSKHandler_GetDetail_MissingParam(t *testing.T) {
 	t.Parallel()
 
 	h := &SKHandler{repo: nil, cfg: nil}
-	req := httptest.NewRequest("GET", "/api/sk/detail", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/sk/detail", nil)
 
-	h.handleGetSKDetail(w, req)
+	h.handleGetSKDetail(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -198,10 +207,10 @@ func TestSKHandler_Preview_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	h := &SKHandler{repo: nil, cfg: nil}
-	req := httptest.NewRequest("POST", "/api/sk/preview", strings.NewReader("<<<json rusak>>>"))
-	w := httptest.NewRecorder()
+	body := strings.NewReader("<<<json rusak>>>")
+	c, w := createTestContext("POST", "/api/sk/preview", body)
 
-	h.handlePostSKPreview(w, req)
+	h.handlePostSKPreview(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -213,11 +222,10 @@ func TestSKHandler_Preview_MissingSKNo(t *testing.T) {
 	t.Parallel()
 
 	h := &SKHandler{repo: nil, cfg: nil}
-	body := `{"sk_no":"","rows":[{"id_tt":"TT001"}]}`
-	req := httptest.NewRequest("POST", "/api/sk/preview", strings.NewReader(body))
-	w := httptest.NewRecorder()
+	body := strings.NewReader(`{"sk_no":"","tgl_berlaku":"2024-01-01","rows":[{"id_tt":"TT001"}]}`)
+	c, w := createTestContext("POST", "/api/sk/preview", body)
 
-	h.handlePostSKPreview(w, req)
+	h.handlePostSKPreview(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -229,11 +237,10 @@ func TestSKHandler_Preview_EmptyRows(t *testing.T) {
 	t.Parallel()
 
 	h := &SKHandler{repo: nil, cfg: nil}
-	body := `{"sk_no":"SK/001/2024","rows":[]}`
-	req := httptest.NewRequest("POST", "/api/sk/preview", strings.NewReader(body))
-	w := httptest.NewRecorder()
+	body := strings.NewReader(`{"sk_no":"SK/001/2024","tgl_berlaku":"2024-01-01","rows":[]}`)
+	c, w := createTestContext("POST", "/api/sk/preview", body)
 
-	h.handlePostSKPreview(w, req)
+	h.handlePostSKPreview(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -245,11 +252,10 @@ func TestSKHandler_Preview_Success(t *testing.T) {
 	t.Parallel()
 
 	h := &SKHandler{repo: nil, cfg: nil}
-	body := `{"sk_no":"SK/001/2024","tgl_berlaku":"2024-01-01","rows":[{"id_tt":"TT001","nama_tt":"VIP A"}]}`
-	req := httptest.NewRequest("POST", "/api/sk/preview", strings.NewReader(body))
-	w := httptest.NewRecorder()
+	body := strings.NewReader(`{"sk_no":"SK/001/2024","tgl_berlaku":"2024-01-01","rows":[{"id_tt":"TT001","nama_tt":"VIP A"}]}`)
+	c, w := createTestContext("POST", "/api/sk/preview", body)
 
-	h.handlePostSKPreview(w, req)
+	h.handlePostSKPreview(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
@@ -272,10 +278,10 @@ func TestSKHandler_Import_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	h := &SKHandler{repo: nil, cfg: nil}
-	req := httptest.NewRequest("POST", "/api/sk/import", strings.NewReader("<<<bukan json>>>"))
-	w := httptest.NewRecorder()
+	body := strings.NewReader("<<<bukan json>>>")
+	c, w := createTestContext("POST", "/api/sk/import", body)
 
-	h.handlePostSKImport(w, req)
+	h.handlePostSKImport(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -303,13 +309,13 @@ func TestWriteJSON_TableDriven(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			w := httptest.NewRecorder()
-			writeJSON(w, tc.status, tc.data)
+			c, w := createTestContext("GET", "/test", nil)
+			writeJSON(c, tc.status, tc.data)
 
 			if w.Code != tc.status {
 				t.Errorf("status: got %d, want %d", w.Code, tc.status)
 			}
-			assertContentTypeJSON(t, w)
+			assertContentTypeJSON(t, c)
 		})
 	}
 }
@@ -369,16 +375,14 @@ func TestHandleHealthz_Success(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
 		dispatcher: nil, // not needed for healthz
 	}
-	req := httptest.NewRequest("GET", "/api/healthz", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/healthz", nil)
 
-	h.handleHealthz(w, req)
+	h.handleHealthz(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
-	assertContentTypeJSON(t, w)
-	assertCORSHeader(t, w)
+	assertContentTypeJSON(t, c)
 
 	var got map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
@@ -402,16 +406,14 @@ func TestHandleSKActive_Success(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
 		dispatcher: nil, // not needed
 	}
-	req := httptest.NewRequest("GET", "/api/sk-active", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/sk-active", nil)
 
-	h.handleSKActive(w, req)
+	h.handleSKActive(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
-	assertContentTypeJSON(t, w)
-	assertCORSHeader(t, w)
+	assertContentTypeJSON(t, c)
 
 	var got map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
@@ -432,10 +434,9 @@ func TestHandleSKActive_Empty(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
 		dispatcher: nil,
 	}
-	req := httptest.NewRequest("GET", "/api/sk-active", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/sk-active", nil)
 
-	h.handleSKActive(w, req)
+	h.handleSKActive(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
@@ -463,16 +464,14 @@ func TestHandleGetBeds_Success(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
 		dispatcher: nil,
 	}
-	req := httptest.NewRequest("GET", "/api/beds", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/beds", nil)
 
-	h.handleGetBeds(w, req)
+	h.handleGetBeds(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
-	assertContentTypeJSON(t, w)
-	assertCORSHeader(t, w)
+	assertContentTypeJSON(t, c)
 
 	var got []repository.BedSiranap
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
@@ -500,16 +499,14 @@ func TestHandleGetLogs_Success(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}, Operational: config.OperationalConfig{LogFile: logPath}},
 		dispatcher: nil,
 	}
-	req := httptest.NewRequest("GET", "/api/logs", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/logs", nil)
 
-	h.handleGetLogs(w, req)
+	h.handleGetLogs(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
-	assertContentTypeJSON(t, w)
-	assertCORSHeader(t, w)
+	assertContentTypeJSON(t, c)
 
 	var got map[string]interface{}
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
@@ -531,10 +528,9 @@ func TestHandleGetLogs_FileNotExist(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}, Operational: config.OperationalConfig{LogFile: "/nonexistent/path/test.log"}},
 		dispatcher: nil,
 	}
-	req := httptest.NewRequest("GET", "/api/logs", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/logs", nil)
 
-	h.handleGetLogs(w, req)
+	h.handleGetLogs(c)
 
 	// Should return 200 with empty lines, not 500
 	if w.Code != http.StatusOK {
@@ -552,16 +548,14 @@ func TestHandleWorkerStatus_Idle(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
 		dispatcher: nil, // not needed since we use global runningFlag
 	}
-	req := httptest.NewRequest("GET", "/api/worker/status", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/worker/status", nil)
 
-	h.handleWorkerStatus(w, req)
+	h.handleWorkerStatus(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
-	assertContentTypeJSON(t, w)
-	assertCORSHeader(t, w)
+	assertContentTypeJSON(t, c)
 
 	var got map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
@@ -583,10 +577,9 @@ func TestHandleWorkerStatus_Running(t *testing.T) {
 		cfg:        &config.Config{Security: config.SecurityConfig{DashboardOrigin: "*"}},
 		dispatcher: nil,
 	}
-	req := httptest.NewRequest("GET", "/api/worker/status", nil)
-	w := httptest.NewRecorder()
+	c, w := createTestContext("GET", "/api/worker/status", nil)
 
-	h.handleWorkerStatus(w, req)
+	h.handleWorkerStatus(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
