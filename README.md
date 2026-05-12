@@ -56,16 +56,19 @@ Every **2 hours** (or manually), the system:
 
 ## 3. System Architecture
 
+> **HTTP Framework**: Since v2.0.0, the application uses **Gin** (`github.com/gin-gonic/gin`) for HTTP routing and middleware. Previously used `net/http` standard library.
+
 ```
 sirs-online/
 ├── main.go                     # Entry point (console / Windows Service)
 ├── config/config.go            # Configuration from .env
 ├── internal/
-│   ├── handler/                # HTTP endpoints
+│   ├── handler/                # HTTP endpoints (Gin framework)
 │   │   ├── api_handler.go      # beds, logs, sync, worker status
 │   │   ├── sk_handler.go       # SK management (list, detail, import)
 │   │   ├── beds_handler.go      # Bed mapping
-│   │   └── proxy_handler.go    # Proxy to Kemenkes API
+│   │   ├── proxy_handler.go    # Proxy to Kemenkes API
+│   │   └── middleware.go       # CORS and body size middleware
 │   ├── worker/                 # Core sync system
 │   │   ├── dispatcher.go       # Ticker scheduler & job queue
 │   │   ├── worker.go           # Sync logic (DB → Kemenkes PUT)
